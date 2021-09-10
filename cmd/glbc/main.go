@@ -57,6 +57,7 @@ import (
 	"k8s.io/ingress-gce/pkg/flags"
 	_ "k8s.io/ingress-gce/pkg/klog"
 	"k8s.io/ingress-gce/pkg/l4"
+	"k8s.io/ingress-gce/pkg/l4netlb"
 	"k8s.io/ingress-gce/pkg/version"
 )
 
@@ -275,6 +276,12 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	if flags.F.RunL4Controller {
 		l4Controller := l4.NewController(ctx, stopCh)
 		go l4Controller.Run()
+		klog.V(0).Infof("L4 controller started")
+	}
+
+	if flags.F.RunL4NetLbController {
+		l4netlbController := l4netlb.NewController(ctx, stopCh)
+		go l4netlbController.Run()
 		klog.V(0).Infof("L4 controller started")
 	}
 
