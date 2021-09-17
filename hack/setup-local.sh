@@ -4,7 +4,7 @@
 # desktop.
 
 set -e
-
+set -x
 parseCluster() {
     # These are all globals.
     net=$1

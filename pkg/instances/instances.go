@@ -269,6 +269,7 @@ func (i *Instances) getInstanceReferences(zone string, nodeNames []string) (refs
 	return refs
 }
 
+// czawadka AddInstancesToInstanceGroup
 // Add adds the given instances to the appropriately zoned Instance Group.
 func (i *Instances) Add(groupName string, names []string) error {
 	events.GlobalEventf(i.recorder, core.EventTypeNormal, events.AddNodes, "Adding %s to InstanceGroup %q", events.TruncatedStringList(names), groupName)

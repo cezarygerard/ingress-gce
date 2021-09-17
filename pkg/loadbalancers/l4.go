@@ -341,3 +341,143 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service)
 	result.Status = &corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{IP: fr.IPAddress}}}
 	return result
 }
+
+func (l *L4) EnsureExternalLoadBalancer(nodeNames []string, svc *corev1.Service) *SyncResult {
+	result := &SyncResult{
+		Annotations: make(map[string]string),
+		StartTime:   time.Now(),
+		SyncType:    SyncTypeCreate}
+
+	// If service already has an IP assigned, treat it as an update instead of a new Loadbalancer.
+	// This will also cover cases where an external LB is updated to an ILB, which is technically a create for ILB.
+	// But this is still the easiest way to identify create vs update in the common case.
+	if len(svc.Status.LoadBalancer.Ingress) > 0 {
+		result.SyncType = SyncTypeUpdate
+	}
+
+	l.Service = svc
+	// Use the same resource name for NEG, BackendService as well as FR, FWRule.
+	name, ok := l.namer.VMIPNEG(l.Service.Namespace, l.Service.Name)
+	if !ok {
+		result.Error = fmt.Errorf("Namer does not support L4 VMIPNEGs")
+		return result
+	}
+	options := getILBOptions(l.Service)
+
+	// create healthcheck
+	sharedHC := !helpers.RequestsOnlyLocalTraffic(l.Service)
+	hcName, hcFwName := l.namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
+	hcPath, hcPort := gce.GetNodesHealthCheckPath(), gce.GetNodesHealthCheckPort()
+	if !sharedHC {
+		hcPath, hcPort = helpers.GetServiceHealthCheckPathPort(l.Service)
+	} else {
+		// Take the lock when creating the shared healthcheck
+		l.sharedResourcesLock.Lock()
+	}
+	_, hcLink, err := healthchecks.EnsureL4HealthCheck(l.cloud, hcName, l.NamespacedName, sharedHC, hcPath, hcPort)
+	if sharedHC {
+		// unlock here so rest of the resource creation API can be called without unnecessarily holding the lock.
+		l.sharedResourcesLock.Unlock()
+	}
+	if err != nil {
+		result.GCEResourceInError = annotations.HealthcheckResource
+		result.Error = err
+		return result
+	}
+	result.Annotations[annotations.HealthcheckKey] = hcName
+
+	_, portRanges, protocol := utils.GetPortsAndProtocol(l.Service.Spec.Ports)
+
+	// ensure firewalls
+	sourceRanges, err := helpers.GetLoadBalancerSourceRanges(l.Service)
+	if err != nil {
+		result.Error = err
+		return result
+	}
+	hcSourceRanges := gce.L4LoadBalancerSrcRanges()
+	ensureFunc := func(name, IP string, sourceRanges, portRanges []string, proto string, shared bool) error {
+		if shared {
+			l.sharedResourcesLock.Lock()
+			defer l.sharedResourcesLock.Unlock()
+		}
+		nsName := utils.ServiceKeyFunc(l.Service.Namespace, l.Service.Name)
+		err := firewalls.EnsureL4InternalFirewallRule(l.cloud, name, IP, nsName, sourceRanges, portRanges, nodeNames, proto, shared)
+		if err != nil {
+			if fwErr, ok := err.(*firewalls.FirewallXPNError); ok {
+				l.recorder.Eventf(l.Service, corev1.EventTypeNormal, "XPN", fwErr.Message)
+				return nil
+			}
+			return err
+		}
+		return nil
+	}
+	// Add firewall rule for ILB traffic to nodes
+	err = ensureFunc(name, "", sourceRanges.StringSlice(), portRanges, string(protocol), false)
+	if err != nil {
+		result.GCEResourceInError = annotations.FirewallRuleResource
+		result.Error = err
+		return result
+	}
+	result.Annotations[annotations.FirewallRuleKey] = name
+
+	// Add firewall rule for healthchecks to nodes
+	err = ensureFunc(hcFwName, "", hcSourceRanges, []string{strconv.Itoa(int(hcPort))}, string(corev1.ProtocolTCP), sharedHC)
+	if err != nil {
+		result.GCEResourceInError = annotations.FirewallForHealthcheckResource
+		result.Error = err
+		return result
+	}
+	result.Annotations[annotations.FirewallRuleForHealthcheckKey] = hcFwName
+
+	// Check if protocol has changed for this service. In this case, forwarding rule should be deleted before
+	// the backend service can be updated.
+	existingBS, err := l.backendPool.Get(name, meta.VersionGA, l.scope)
+	err = utils.IgnoreHTTPNotFound(err)
+	if err != nil {
+		klog.Errorf("Failed to lookup existing backend service, ignoring err: %v", err)
+	}
+	existingFR := l.GetForwardingRule(l.GetFRName(), meta.VersionGA)
+	if existingBS != nil && existingBS.Protocol != string(protocol) {
+		klog.Infof("Protocol changed from %q to %q for service %s", existingBS.Protocol, string(protocol), l.NamespacedName)
+		// Delete forwarding rule if it exists
+		existingFR = l.GetForwardingRule(l.getFRNameWithProtocol(existingBS.Protocol), meta.VersionGA)
+		l.deleteForwardingRule(l.getFRNameWithProtocol(existingBS.Protocol), meta.VersionGA)
+	}
+
+	// ensure backend service
+	bs, err := l.backendPool.EnsureL4BackendService(name, hcLink, string(protocol), string(l.Service.Spec.SessionAffinity),
+		string(cloud.SchemeInternal), l.NamespacedName, meta.VersionGA)
+	if err != nil {
+		result.GCEResourceInError = annotations.BackendServiceResource
+		result.Error = err
+		return result
+	}
+	result.Annotations[annotations.BackendServiceKey] = name
+	// create fr rule
+	frName := l.GetFRName()
+	fr, err := l.ensureForwardingRule(frName, bs.SelfLink, options, existingFR)
+	if err != nil {
+		klog.Errorf("EnsureInternalLoadBalancer: Failed to create forwarding rule - %v", err)
+		result.GCEResourceInError = annotations.ForwardingRuleResource
+		result.Error = err
+		return result
+	}
+	if fr.IPProtocol == string(corev1.ProtocolTCP) {
+		result.Annotations[annotations.TCPForwardingRuleKey] = frName
+	} else {
+		result.Annotations[annotations.UDPForwardingRuleKey] = frName
+	}
+
+	result.MetricsState.InSuccess = true
+	if options.AllowGlobalAccess {
+		result.MetricsState.EnabledGlobalAccess = true
+	}
+	// SubnetName is overwritten to nil value if Alpha feature gate for custom subnet
+	// is not enabled. So, a non empty subnet name at this point implies that the
+	// feature is in use.
+	if options.SubnetName != "" {
+		result.MetricsState.EnabledCustomSubnet = true
+	}
+	result.Status = &corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{IP: fr.IPAddress}}}
+	return result
+}

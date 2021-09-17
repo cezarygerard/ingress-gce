@@ -18,6 +18,7 @@ package l4netlb
 
 import (
 	"fmt"
+	"k8s.io/ingress-gce/pkg/instances"
 	"reflect"
 	"sync"
 	"time"
@@ -61,6 +62,8 @@ type L4NetLbController struct {
 	// needed for listing the zones in the cluster.
 	translator *translator.Translator
 
+	igLinker backends.Linker
+
 	backendPool *backends.Backends
 	namer       namer.L4ResourcesNamer
 	// enqueueTracker tracks the latest time an update was enqueued
@@ -76,6 +79,9 @@ func NewController(ctx *context.ControllerContext, stopCh chan struct{}) *L4NetL
 		klog.Infof("L4 Worker count has not been set, setting to 1")
 		ctx.NumL4Workers = 1
 	}
+	backendPool := backends.NewPool(ctx.Cloud, ctx.L4Namer)
+	instancePool := instances.NewNodePool(ctx.Cloud, ctx.ClusterNamer, ctx, utils.GetBasePath(ctx.Cloud))
+
 	l4c := &L4NetLbController{
 		ctx:           ctx,
 		client:        ctx.KubeClient,
@@ -86,28 +92,29 @@ func NewController(ctx *context.ControllerContext, stopCh chan struct{}) *L4NetL
 	}
 	l4c.namer = ctx.L4Namer
 	l4c.translator = translator.NewTranslator(ctx)
-	l4c.backendPool = backends.NewPool(ctx.Cloud, l4c.namer)
-
+	l4c.backendPool = backendPool
+	l4c.igLinker = backends.NewInstanceGroupLinker(instancePool, backendPool)
 	l4c.svcQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("l4", "services", l4c.numWorkers, l4c.sync)
 
 	ctx.ServiceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			addSvc := obj.(*v1.Service)
 			svcKey := utils.ServiceKeyFunc(addSvc.Namespace, addSvc.Name)
-			needsILB, svcType := annotations.WantsNewL4ILB(addSvc)
+			//needsILB, svcType := annotations.WantsNewL4ILB(addSvc)
+			//needsILB = true
 			// Check for deletion since updates or deletes show up as Add when controller restarts.
-			if needsILB || needsDeletion(addSvc) {
-				klog.V(3).Infof("ILB Service %s added, enqueuing", svcKey)
-				l4c.ctx.Recorder(addSvc.Namespace).Eventf(addSvc, v1.EventTypeNormal, "ADD", svcKey)
-				l4c.svcQueue.Enqueue(addSvc)
-				l4c.enqueueTracker.Track()
-			} else {
-				klog.V(4).Infof("Ignoring add for non-lb service %s based on %v", svcKey, svcType)
-			}
+			//if needsILB || needsDeletion(addSvc) {
+			klog.V(3).Infof("ELB Service %s added, enqueuing", svcKey)
+			l4c.ctx.Recorder(addSvc.Namespace).Eventf(addSvc, v1.EventTypeNormal, "ADD", svcKey)
+			l4c.svcQueue.Enqueue(addSvc)
+			//l4c.enqueueTracker.Track()
+			//} else {
+			//	klog.V(4).Infof("Ignoring add for non-lb service %s based on %v", svcKey, svcType)
+			//}
 		},
 		// Deletes will be handled in the Update when the deletion timestamp is set.
-		UpdateFunc: func(old, cur interface{}) {
-		},
+		//UpdateFunc: func(old, cur interface{}) {
+		//},
 	})
 	// TODO enhance this by looking at some metric from service controller to ensure it is up.
 	// We cannot use existence of a backend service or other resource, since those are on a per-service basis.
@@ -167,20 +174,20 @@ func (l4c *L4NetLbController) shouldProcessService(service *v1.Service, l4 *load
 // Returns an error if processing the service update failed.
 func (l4c *L4NetLbController) processServiceCreateOrUpdate(key string, service *v1.Service) *loadbalancers.SyncResult {
 	l4 := loadbalancers.NewL4Handler(service, l4c.ctx.Cloud, meta.Regional, l4c.namer, l4c.ctx.Recorder(service.Namespace), &l4c.sharedResourcesLock)
-	if !l4c.shouldProcessService(service, l4) {
-		return nil
-	}
+	//if !l4c.shouldProcessService(service, l4) {
+	//	return nil
+	//}
 	// Ensure v2 finalizer
-	if err := common.EnsureServiceFinalizer(service, common.ILBFinalizerV2, l4c.ctx.KubeClient); err != nil {
-		return &loadbalancers.SyncResult{Error: fmt.Errorf("Failed to attach finalizer to service %s/%s, err %w", service.Namespace, service.Name, err)}
-	}
+	//if err := common.EnsureServiceFinalizer(service, common.ILBFinalizerV2, l4c.ctx.KubeClient); err != nil {
+	//	return &loadbalancers.SyncResult{Error: fmt.Errorf("Failed to attach finalizer to service %s/%s, err %w", service.Namespace, service.Name, err)}
+	//}
 	nodeNames, err := utils.GetReadyNodeNames(l4c.nodeLister)
 	if err != nil {
 		return &loadbalancers.SyncResult{Error: err}
 	}
 	// Use the same function for both create and updates. If controller crashes and restarts,
 	// all existing services will show up as Service Adds.
-	syncResult := l4.EnsureInternalLoadBalancer(nodeNames, service)
+	syncResult := l4.EnsureExternalLoadBalancer(nodeNames, service)
 	// syncResult will not be nil
 	if syncResult.Error != nil {
 		l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
@@ -194,6 +201,14 @@ func (l4c *L4NetLbController) processServiceCreateOrUpdate(key string, service *
 			l4.NamespacedName.String())
 		return syncResult
 	}
+
+	if err = l4c.linkNEG(l4); err != nil {
+		l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
+			"Failed to link Instance Group with Backend Service for load balancer, err: %v", err)
+		syncResult.Error = err
+		return syncResult
+	}
+
 	err = l4c.updateServiceStatus(service, syncResult.Status)
 	if err != nil {
 		l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
@@ -211,6 +226,59 @@ func (l4c *L4NetLbController) processServiceCreateOrUpdate(key string, service *
 	}
 	return syncResult
 }
+
+// linkNEG associates the NEG to the backendService for the given L4 ILB service.
+func (l4c *L4NetLbController) linkNEG(l4 *loadbalancers.L4) error {
+	// link neg to backend service
+	zones, err := l4c.translator.ListZones()
+	if err != nil {
+		return nil
+	}
+	var groupKeys []backends.GroupKey
+	for _, zone := range zones {
+		groupKeys = append(groupKeys, backends.GroupKey{Zone: zone})
+	}
+	return l4c.igLinker.Link(l4.ServicePort, groupKeys)
+}
+
+//TODO czawadka:
+//// syncInstanceGroup creates instance groups, syncs instances, sets named ports and updates instance group annotation
+//func (lbc *LoadBalancerController) syncInstanceGroup(ing *v1.Ingress, ingSvcPorts []utils.ServicePort) error {
+//	nodePorts := nodePorts(ingSvcPorts)
+//	klog.V(2).Infof("Syncing Instance Group for ingress %v/%v with nodeports %v", ing.Namespace, ing.Name, nodePorts)
+//	igs, err := lbc.instancePool.EnsureInstanceGroupsAndPorts(lbc.ctx.ClusterNamer.InstanceGroup(), nodePorts)
+//	if err != nil {
+//		return err
+//	}
+//
+//	nodeNames, err := utils.GetReadyNodeNames(listers.NewNodeLister(lbc.nodeLister))
+//	if err != nil {
+//		return err
+//	}
+//	// Add/remove instances to the instance groups.
+//	if err = lbc.instancePool.Sync(nodeNames); err != nil {
+//		return err
+//	}
+//
+//	// TODO: Remove this after deprecation
+//	if utils.IsGCEMultiClusterIngress(ing) {
+//		klog.Warningf("kubemci is used for ingress %v", ing)
+//		// Add instance group names as annotation on the ingress and return.
+//		newAnnotations := ing.ObjectMeta.DeepCopy().Annotations
+//		if newAnnotations == nil {
+//			newAnnotations = make(map[string]string)
+//		}
+//		if err = setInstanceGroupsAnnotation(newAnnotations, igs); err != nil {
+//			return err
+//		}
+//		if err = updateAnnotations(lbc.ctx.KubeClient, ing, newAnnotations); err != nil {
+//			return err
+//		}
+//		// This short-circuit will stop the syncer from moving to next step.
+//		return ingsync.ErrSkipBackendsSync
+//	}
+//	return nil
+//}
 
 func (l4c *L4NetLbController) processServiceDeletion(key string, svc *v1.Service) *loadbalancers.SyncResult {
 	l4 := loadbalancers.NewL4Handler(svc, l4c.ctx.Cloud, meta.Regional, l4c.namer, l4c.ctx.Recorder(svc.Namespace), &l4c.sharedResourcesLock)
@@ -271,40 +339,40 @@ func (l4c *L4NetLbController) sync(key string) error {
 	}
 	// Check again here, to avoid time-of check, time-of-use race. A service queued by informer could have changed, no
 	// longer needing an ILB.
-	if wantsILB, _ := annotations.WantsL4ILB(svc); wantsILB {
-		klog.V(2).Infof("Ensuring ILB resources for service %s managed by L4 controller", key)
-		result = l4c.processServiceCreateOrUpdate(key, svc)
-		if result == nil {
-			// result will be nil if the service was ignored(due to presence of service controller finalizer).
-			return nil
-		}
-		l4c.publishMetrics(result, namespacedName)
-		return result.Error
+	//if wantsILB, _ := annotations.WantsL4ILB(svc); wantsILB {
+	klog.V(2).Infof("Ensuring ILB resources for service %s managed by L4 controller", key)
+	result = l4c.processServiceCreateOrUpdate(key, svc)
+	if result == nil {
+		// result will be nil if the service was ignored(due to presence of service controller finalizer).
+		return nil
 	}
-	klog.V(3).Infof("Ignoring sync of service %s, neither delete nor ensure needed.", key)
-	return nil
+	l4c.publishMetrics(result, namespacedName)
+	return result.Error
+	//}
+	//klog.V(3).Infof("Ignoring sync of service %s, neither delete nor ensure needed.", key)
+	//return nil
 }
 
 func (l4c *L4NetLbController) publishMetrics(result *loadbalancers.SyncResult, namespacedName string) {
-	if result == nil {
-		return
-	}
-	switch result.SyncType {
-	case loadbalancers.SyncTypeCreate, loadbalancers.SyncTypeUpdate:
-		klog.V(6).Infof("Internal L4 Loadbalancer for Service %s ensured, updating its state %v in metrics cache", namespacedName, result.MetricsState)
-		l4c.ctx.ControllerMetrics.SetL4ILBService(namespacedName, result.MetricsState)
-		//l4metrics.PublishILBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime)
-
-	case loadbalancers.SyncTypeDelete:
-		// if service is successfully deleted, remove it from cache
-		if result.Error == nil {
-			klog.V(6).Infof("Internal L4 Loadbalancer for Service %s deleted, removing its state from metrics cache", namespacedName)
-			l4c.ctx.ControllerMetrics.DeleteL4ILBService(namespacedName)
-		}
-		//l4metrics.PublishILBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime)
-	default:
-		klog.Warningf("Unknown sync type %q, skipping metrics", result.SyncType)
-	}
+	//if result == nil {
+	//	return
+	//}
+	//switch result.SyncType {
+	//case loadbalancers.SyncTypeCreate, loadbalancers.SyncTypeUpdate:
+	//	klog.V(6).Infof("Internal L4 Loadbalancer for Service %s ensured, updating its state %v in metrics cache", namespacedName, result.MetricsState)
+	//	l4c.ctx.ControllerMetrics.SetL4ILBService(namespacedName, result.MetricsState)
+	//	//l4metrics.PublishILBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime)
+	//
+	//case loadbalancers.SyncTypeDelete:
+	//	// if service is successfully deleted, remove it from cache
+	//	if result.Error == nil {
+	//		klog.V(6).Infof("Internal L4 Loadbalancer for Service %s deleted, removing its state from metrics cache", namespacedName)
+	//		l4c.ctx.ControllerMetrics.DeleteL4ILBService(namespacedName)
+	//	}
+	//	//l4metrics.PublishILBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime)
+	//default:
+	//	klog.Warningf("Unknown sync type %q, skipping metrics", result.SyncType)
+	//}
 }
 
 func (l4c *L4NetLbController) updateServiceStatus(svc *v1.Service, newStatus *v1.LoadBalancerStatus) error {
