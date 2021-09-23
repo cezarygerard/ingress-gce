@@ -67,11 +67,24 @@ type instanceGroupLinker struct {
 	backendPool  Pool
 }
 
+// instanceInternalGroupLinker handles linking backends to InstanceGroup's.
+type instanceInternalGroupLinker struct {
+	instancePool instances.NodePool
+	backendPool  Pool
+}
+
 // instanceGroupLinker is a Linker
 var _ Linker = (*instanceGroupLinker)(nil)
 
 func NewInstanceGroupLinker(instancePool instances.NodePool, backendPool Pool) Linker {
 	return &instanceGroupLinker{
+		instancePool: instancePool,
+		backendPool:  backendPool,
+	}
+}
+
+func NewInstanceInternalGroupLinker(instancePool instances.NodePool, backendPool Pool) Linker {
+	return &instanceInternalGroupLinker{
 		instancePool: instancePool,
 		backendPool:  backendPool,
 	}
@@ -193,4 +206,64 @@ func getInstanceGroupsToAdd(be *composite.BackendService, igLinks []string) ([]s
 	}
 
 	return missingIGs.List(), nil
+}
+
+func (l *instanceInternalGroupLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
+	var igLinks []string
+	klog.V(2).Infof("Check IG for %d", len(groups))
+	for _, group := range groups {
+		ig, err := l.instancePool.Get(sp.IGName(), group.Zone)
+		if err != nil {
+			klog.V(2).Infof("Error linking IG %s Zone: %s", sp.IGName(), group.Zone)
+			return fmt.Errorf("error retrieving IG for linking with backend %+v: %w", sp, err)
+		}
+		igLinks = append(igLinks, ig.SelfLink)
+	}
+	klog.V(2).Infof("LinkIg %v", igLinks)
+	addIGs := sets.String{}
+	for _, igLink := range igLinks {
+		path, err := utils.RelativeResourceName(igLink)
+		if err != nil {
+			return fmt.Errorf("failed to parse instance group: %w", err)
+		}
+		addIGs.Insert(path)
+	}
+	klog.V(2).Infof("IG to Add %v", addIGs)
+	if len(addIGs) == 0 {
+		return nil
+	}
+
+	// We first try to create the backend with balancingMode=RATE.  If this	+ return addIGs
+	// fails, it's mostly likely because there are existing backends with
+	// balancingMode=UTILIZATION. This failure mode throws a googleapi error
+	// which wraps a HTTP 400 status code. We handle it in the loop below
+	// and come around to retry with the right balancing mode. The goal is to
+	// switch everyone to using RATE.
+
+	var newBackends []*composite.Backend
+	//maxRPS := float64(1)
+	for _, igLink := range igLinks {
+		b := &composite.Backend{
+			Group:              igLink,
+			//BalancingMode:      string("RATE"),
+			//MaxRatePerInstance: maxRPS,
+		}
+		newBackends = append(newBackends, b)
+	}
+	klog.V(2).Infof("GetBackend %s", sp.BackendName())
+	//be, err := backendPool.Get(sp.BackendName(), meta.VersionGA, meta.Global)
+	be, err := l.backendPool.Get(sp.BackendName(), meta.VersionGA, meta.Regional)
+	if err != nil {
+		return err
+	}
+	be.Backends = newBackends
+
+	if err := l.backendPool.Update(be); err != nil {
+		if utils.IsHTTPErrorCode(err, http.StatusBadRequest) {
+			klog.V(2).Infof("Updating backend service backends for Ig failed, err:%v", err)
+			return err
+		}
+	}
+	klog.V(2).Infof("IG LInk end")
+	return nil
 }
