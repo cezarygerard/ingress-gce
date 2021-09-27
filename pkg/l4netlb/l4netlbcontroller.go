@@ -180,7 +180,7 @@ func (l4netlbc *L4NetLbController) sync(key string) error {
 
 func (l4netlbc *L4NetLbController) processServiceDeletion(key string, svc *v1.Service) *loadbalancers.SyncResultNetLb {
 	klog.V(0).Infof(" L4netLbController processServiceDeletion")
-	l4netlb := loadbalancers.NewL4NetLbHandler(svc, l4netlbc.ctx.Cloud, meta.Regional, l4netlbc.namer, l4netlbc.ctx.Recorder(svc.Namespace), l4netlbc.igLinker, &l4netlbc.sharedResourcesLock)
+	l4netlb := loadbalancers.NewL4NetLbHandler(svc, l4netlbc.ctx.Cloud, meta.Regional, l4netlbc.namer, l4netlbc.ctx.Recorder(svc.Namespace), &l4netlbc.sharedResourcesLock)
 	l4netlbc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer", "Deleting load balancer for %s", key)
 	igName := l4netlbc.ctx.ClusterNamer.InstanceGroup()
 	klog.Infof("Deleting instance group %v", igName)
@@ -191,7 +191,7 @@ func (l4netlbc *L4NetLbController) processServiceDeletion(key string, svc *v1.Se
 		result.Error = fmt.Errorf("failed to reset ILB status, err: %w", err)
 		return &result
 	}
-	result = *l4netlb.EnsureNetLbLoadBalancerDeleted(svc)
+	result = *l4netlb.EnsureNetLbDeleted(svc)
 	if result.Error != nil {
 		l4netlbc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancerFailed", "Error deleting load balancer: %v", result.Error)
 		return &result
@@ -203,7 +203,7 @@ func (l4netlbc *L4NetLbController) processServiceDeletion(key string, svc *v1.Se
 // Returns an error if processing the service update failed.
 func (l4netlbc *L4NetLbController) processServiceCreateOrUpdate(key string, service *v1.Service) *loadbalancers.SyncResultNetLb {
 	klog.V(0).Infof(" L4 netLbIg controller processServiceCreateOrUpdate")
-	l4netlb := loadbalancers.NewL4NetLbHandler(service, l4netlbc.ctx.Cloud, meta.Regional, l4netlbc.namer, l4netlbc.ctx.Recorder(service.Namespace), l4netlbc.igLinker, &l4netlbc.sharedResourcesLock)
+	l4netlb := loadbalancers.NewL4NetLbHandler(service, l4netlbc.ctx.Cloud, meta.Regional, l4netlbc.namer, l4netlbc.ctx.Recorder(service.Namespace), &l4netlbc.sharedResourcesLock)
 	if !l4netlbc.shouldProcessService(service, l4netlb) {
 		return nil
 	}
@@ -213,9 +213,9 @@ func (l4netlbc *L4NetLbController) processServiceCreateOrUpdate(key string, serv
 	if err != nil {
 		return &loadbalancers.SyncResultNetLb{Error: err}
 	}
-	klog.V(3).Infof(" L4netLbController EnsureInsranceGroup %v", nodeNames)
+	klog.V(3).Infof(" L4netLbController EnsureInstanceGroup %v", nodeNames)
 	// Add or create instance groups
-	if err:= l4netlbc.EnsureInsranceGroup(service, nodeNames); err != nil {
+	if err:= l4netlbc.EnsureInstanceGroup(service, nodeNames); err != nil {
 		l4netlbc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncInstanceagroupsFailed",
 			"Error syncing load balancer: %v", err)
 		return &loadbalancers.SyncResultNetLb{Error: err}
@@ -230,7 +230,7 @@ func (l4netlbc *L4NetLbController) processServiceCreateOrUpdate(key string, serv
 		return syncResult
 	}
 	// link ig to backend service
-	zones, err := l4netlbc.translator.ListZones()
+	zones, err := l4netlbc.translator.ListZones(utils.AllNodesPredicate)
 	if err != nil {
 		return nil
 	}
@@ -261,8 +261,8 @@ func (l4netlbc *L4NetLbController) shouldProcessService(service *v1.Service, l4 
 	return true
 }
 
-// EnsureInsranceGroup adds or deletes instances to pool
-func (l4netlbc *L4NetLbController) EnsureInsranceGroup(service *v1.Service, nodeNames []string) error {
+// EnsureInstanceGroup adds or deletes instances to pool
+func (l4netlbc *L4NetLbController) EnsureInstanceGroup(service *v1.Service, nodeNames []string) error {
 	_, _, nodePorts, _ := utils.GetPortsAndProtocol(service.Spec.Ports)
 
 	klog.V(3).Infof("Syncing Instance Group L4Netlb %s with nodeports %v", service.Name, nodePorts)

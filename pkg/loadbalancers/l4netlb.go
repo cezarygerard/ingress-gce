@@ -66,7 +66,7 @@ type SyncResultNetLb struct {
 }
 
 // NewL4NetLbHandler creates a new L4Handler for the given L4NetLb service.
-func NewL4NetLbHandler(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, namer namer.L4ResourcesNamer, recorder record.EventRecorder, linker backends.Linker, lock *sync.Mutex) *L4NetLb {
+func NewL4NetLbHandler(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, namer namer.L4ResourcesNamer, recorder record.EventRecorder, lock *sync.Mutex) *L4NetLb {
 	l4netlb := &L4NetLb{cloud: cloud,
 		scope:               scope,
 		namer:               namer,
@@ -88,9 +88,9 @@ func (l *L4NetLb) CreateKey(name string) (*meta.Key, error) {
 	return composite.CreateKey(l.cloud, name, l.scope)
 }
 
-// EnsureNetLbLoadBalancerDeleted performs a cleanup of all GCE resources for the given loadbalancer service.
-func (l *L4NetLb) EnsureNetLbLoadBalancerDeleted(svc *corev1.Service) *SyncResultNetLb {
-	klog.V(2).Infof("EnsureNetLbLoadBalancerDeleted(%s): attempting delete of load balancer resources", l.NamespacedName.String())
+// EnsureNetLbDeleted performs a cleanup of all GCE resources for the given loadbalancer service.
+func (l *L4NetLb) EnsureNetLbDeleted(svc *corev1.Service) *SyncResultNetLb {
+	klog.V(2).Infof("EnsureNetLbDeleted(%s): attempting delete of load balancer resources", l.NamespacedName.String())
 	sharedHC := true
 	result := &SyncResultNetLb{SyncType: SyncTypeDelete, StartTime: time.Now()}
 	// TODO change namer for proper NetLb Namer
@@ -173,8 +173,7 @@ func (l *L4NetLb) EnsureNetLbLoadBalancerDeleted(svc *corev1.Service) *SyncResul
 }
 
 // GetFRName returns the name of the forwarding rule for the given Net LB service.
-// This appends the protocol to the forwarding rule name, which will help supporting multiple protocols in the same ILB
-// service.
+// This appends the protocol to the forwarding rule name, which will help supporting multiple protocols in the same service.
 func (l *L4NetLb) GetFRName() string {
 	_, _, _, protocol := utils.GetPortsAndProtocol(l.Service.Spec.Ports)
 	return l.getFRNameWithProtocol(string(protocol))
@@ -198,7 +197,7 @@ func (l *L4NetLb) EnsureNetLoadBalancer(nodeNames []string, svc *corev1.Service)
 	}
 
 	l.Service = svc
-	// Use the same resource name for NEG, BackendService as well as FR, FWRule.
+	// TODO(kl52752) change namer for NetLb
 	name, ok := l.namer.VMIPNEG(l.Service.Namespace, l.Service.Name)
 	if !ok {
 		result.Error = fmt.Errorf("Namer does not support L4NetLb VMIPNEGs")
@@ -206,9 +205,10 @@ func (l *L4NetLb) EnsureNetLoadBalancer(nodeNames []string, svc *corev1.Service)
 	}
 
 	// create healthcheck
+	// TODO(kl52752) cover shared HC in test v
 	sharedHC := !helpers.RequestsOnlyLocalTraffic(l.Service)
 
-	hcName, hcFwName := l.namer.L4HealthCheck(svc.Namespace, svc.Name, false)
+	hcName, hcFwName := l.namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
 	hcPath, hcPort := gce.GetNodesHealthCheckPath(), gce.GetNodesHealthCheckPort()
 	if !sharedHC {
 		hcPath, hcPort = helpers.GetServiceHealthCheckPathPort(l.Service)
@@ -227,7 +227,6 @@ func (l *L4NetLb) EnsureNetLoadBalancer(nodeNames []string, svc *corev1.Service)
 		result.Error = err
 		return result
 	}
-	result.Annotations[annotations.HealthcheckKey] = hcName
 
 	_, portRanges, _, protocol := utils.GetPortsAndProtocol(l.Service.Spec.Ports)
 
@@ -262,7 +261,6 @@ func (l *L4NetLb) EnsureNetLoadBalancer(nodeNames []string, svc *corev1.Service)
 		result.Error = err
 		return result
 	}
-	result.Annotations[annotations.FirewallRuleKey] = name
 
 	// Add firewall rule for healthchecks to nodes
 	err = ensureFunc(hcFwName, "", hcSourceRanges, []string{strconv.Itoa(int(hcPort))}, string(corev1.ProtocolTCP), false)
@@ -271,7 +269,6 @@ func (l *L4NetLb) EnsureNetLoadBalancer(nodeNames []string, svc *corev1.Service)
 		result.Error = err
 		return result
 	}
-	result.Annotations[annotations.FirewallRuleForHealthcheckKey] = hcFwName
 
 	//Check if protocol has changed for this service. In this case, forwarding rule should be deleted before
 	//the backend service can be updated.
@@ -296,7 +293,6 @@ func (l *L4NetLb) EnsureNetLoadBalancer(nodeNames []string, svc *corev1.Service)
 		result.Error = err
 		return result
 	}
-	result.Annotations[annotations.BackendServiceKey] = name
 	// create fr rule
 	frName := l.GetFRName()
 	fr, err := l.ensureForwardingRule(frName, bs.SelfLink, existingFR, l.cloud)
@@ -307,9 +303,7 @@ func (l *L4NetLb) EnsureNetLoadBalancer(nodeNames []string, svc *corev1.Service)
 		return result
 	}
 	if fr.IPProtocol == string(corev1.ProtocolTCP) {
-		result.Annotations[annotations.TCPForwardingRuleKey] = frName
 	} else {
-		result.Annotations[annotations.UDPForwardingRuleKey] = frName
 	}
 
 	result.Status = &corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{IP: fr.IPAddress}}}

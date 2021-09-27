@@ -53,7 +53,11 @@ func EnsureL4HealthCheck(cloud *gce.Cloud, name string, svcName types.Namespaced
 			return nil, selfLink, err
 		}
 	}
-	expectedHC := NewL4HealthCheck(name, svcName, shared, path, port, scope)
+	var region string
+	if scope == meta.Regional {
+		region = cloud.Region()
+	}
+	expectedHC := NewL4HealthCheck(name, svcName, shared, path, port, scope, region)
 	if hc == nil {
 		// Create the healthcheck
 		klog.V(2).Infof("Creating healthcheck %s for service %s, shared = %v", name, svcName, shared)
@@ -86,7 +90,7 @@ func DeleteHealthCheck(cloud *gce.Cloud, name string, scope meta.KeyType) error 
 	return composite.DeleteHealthCheck(cloud, key, meta.VersionGA)
 }
 
-func NewL4HealthCheck(name string, svcName types.NamespacedName, shared bool, path string, port int32, scope meta.KeyType) *composite.HealthCheck {
+func NewL4HealthCheck(name string, svcName types.NamespacedName, shared bool, path string, port int32, scope meta.KeyType, region string) *composite.HealthCheck {
 	httpSettings := composite.HTTPHealthCheck{
 		Port:        int64(port),
 		RequestPath: path,
@@ -106,6 +110,7 @@ func NewL4HealthCheck(name string, svcName types.NamespacedName, shared bool, pa
 		Type:               "HTTP",
 		Description:        desc,
 		Scope:							scope,
+		Region:             region,
 	}
 }
 

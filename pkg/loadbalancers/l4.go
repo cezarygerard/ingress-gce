@@ -234,7 +234,6 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service)
 		// Take the lock when creating the shared healthcheck
 		l.sharedResourcesLock.Lock()
 	}
-	klog.V(2).Info("hcPath %s", hcPath)
 	_, hcLink, err := healthchecks.EnsureL4HealthCheck(l.cloud, hcName, l.NamespacedName, sharedHC, hcPath, hcPort, meta.Global)
 	if sharedHC {
 		// unlock here so rest of the resource creation API can be called without unnecessarily holding the lock.

@@ -213,7 +213,7 @@ func TestEnsureInternalLoadBalancerWithExistingResources(t *testing.T) {
 	sharedHC := !servicehelper.RequestsOnlyLocalTraffic(svc)
 	hcName, _ := l.namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
 	hcPath, hcPort := gce.GetNodesHealthCheckPath(), gce.GetNodesHealthCheckPort()
-	_, hcLink, err := healthchecks.EnsureL4HealthCheck(l.cloud, hcName, l.NamespacedName, sharedHC, hcPath, hcPort)
+	_, hcLink, err := healthchecks.EnsureL4HealthCheck(l.cloud, hcName, l.NamespacedName, sharedHC, hcPath, hcPort, meta.Global)
 	if err != nil {
 		t.Errorf("Failed to create healthcheck, err %v", err)
 	}
