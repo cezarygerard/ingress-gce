@@ -319,11 +319,10 @@ func (l *L4) deleteForwardingRule(name string, version meta.Version) {
 	}
 }
 
-// ensureForwardingRule creates a forwarding rule with the given name, if it does not exist. It updates the existing
-// forwarding rule if needed.
-func (l *L4NetLb) ensureForwardingRule(loadBalancerName, bsLink string, existingFwdRule *composite.ForwardingRule, gcecloud *gce.Cloud) (*composite.ForwardingRule, error) {
-	klog.V(2).Infof("ensureForwardingRule backend service selth LInk %s", bsLink)
-	key, err := l.CreateKey(loadBalancerName)
+// ensureForwardingRule creates a forwarding rule with the given name for L4NetLb,
+// if it does not exist. It updates the existing forwarding rule if needed.
+func (lb *L4NetLb) ensureForwardingRule(loadBalancerName, bsLink string, existingFwdRule *composite.ForwardingRule) (*composite.ForwardingRule, error) {
+	key, err := lb.createKey(loadBalancerName)
 	if err != nil {
 		return nil, err
 	}
@@ -332,24 +331,23 @@ func (l *L4NetLb) ensureForwardingRule(loadBalancerName, bsLink string, existing
 
 	// Determine IP which will be used for this LB. If no forwarding rule has been established
 	// or specified in the Service spec, then requestedIP = "".
-	ipToUse := ilbIPToUse(l.Service, existingFwdRule, "")
+	ipToUse := ilbIPToUse(lb.Service, existingFwdRule, "")
 	klog.V(2).Infof("ensureForwardingRule(%v): LoadBalancer IP %s", loadBalancerName, ipToUse)
 
-	_, portRange, _, protocol := utils.GetPortsAndProtocol(l.Service.Spec.Ports)
-	// Create the forwarding rule
-	frDesc, err := utils.MakeL4ILBServiceDescription(utils.ServiceKeyFunc(l.Service.Namespace, l.Service.Name), ipToUse,
-		version, false)
+	_, portRange, _, protocol := utils.GetPortsAndProtocol(lb.Service.Spec.Ports)
+
+	serviceKey := utils.ServiceKeyFunc(lb.Service.Namespace, lb.Service.Name)
+	frDesc, err := utils.MakeL4ILBServiceDescription(serviceKey, ipToUse, version, false)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to compute description for forwarding rule %s, err: %w", loadBalancerName,
 			err)
 	}
-	//target := utils.GetBasePath(gcecloud) + strings.Join([]string{"regions", gcecloud.Region(), "backendServices", key.Name}, "/")
 	fr := &composite.ForwardingRule{
 		Name:                loadBalancerName,
 		Description:         frDesc,
 		IPAddress:           ipToUse,
 		IPProtocol:          string(protocol),
-		PortRange:           portRange[0], //TODO ????
+		PortRange:           portRange[0],
 		LoadBalancingScheme: string(cloud.SchemeExternal),
 		BackendService:      bsLink,
 	}
@@ -366,28 +364,27 @@ func (l *L4NetLb) ensureForwardingRule(loadBalancerName, bsLink string, existing
 		}
 		frDiff := cmp.Diff(existingFwdRule, fr)
 		// If the forwarding rule pointed to a backend service which does not match the controller naming scheme,
-		// that resouce could be leaked. It is not being deleted here because that is a user-managed resource.
+		// that resource could be leaked. It is not being deleted here because that is a user-managed resource.
 		klog.V(2).Infof("ensureForwardingRule: forwarding rule changed - Existing - %+v\n, New - %+v\n, Diff(-existing, +new) - %s\n. Deleting existing forwarding rule.", existingFwdRule, fr, frDiff)
-		if err = utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l.cloud, key, version)); err != nil {
+		if err = utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(lb.cloud, key, version)); err != nil {
 			return nil, err
 		}
-		l.recorder.Eventf(l.Service, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %q deleted", key.Name)
+		lb.recorder.Eventf(lb.Service, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %q deleted", key.Name)
 	}
-	klog.V(2).Infof("%+v", fr)
 	klog.V(2).Infof("ensureForwardingRule: Creating/Recreating forwarding rule - %s", fr.Name)
-	if err = composite.CreateForwardingRule(l.cloud, key, fr); err != nil {
+	if err = composite.CreateForwardingRule(lb.cloud, key, fr); err != nil {
 		return nil, err
 	}
-	return composite.GetForwardingRule(l.cloud, key, fr.Version)
+	return composite.GetForwardingRule(lb.cloud, key, fr.Version)
 }
 
-func (l *L4NetLb) GetForwardingRule(name string, version meta.Version) *composite.ForwardingRule {
-	key, err := l.CreateKey(name)
+func (lb *L4NetLb) GetForwardingRule(name string, version meta.Version) *composite.ForwardingRule {
+	key, err := lb.createKey(name)
 	if err != nil {
 		klog.Errorf("Failed to create key for fetching existing forwarding rule %s, err: %v", name, err)
 		return nil
 	}
-	fr, err := composite.GetForwardingRule(l.cloud, key, version)
+	fr, err := composite.GetForwardingRule(lb.cloud, key, version)
 	if utils.IgnoreHTTPNotFound(err) != nil {
 		klog.Errorf("Failed to lookup existing forwarding rule %s, err: %v", name, err)
 		return nil
@@ -395,13 +392,13 @@ func (l *L4NetLb) GetForwardingRule(name string, version meta.Version) *composit
 	return fr
 }
 
-func (l *L4NetLb) deleteForwardingRule(name string, version meta.Version) {
-	key, err := l.CreateKey(name)
+func (lb *L4NetLb) deleteForwardingRule(name string, version meta.Version) {
+	key, err := lb.createKey(name)
 	if err != nil {
 		klog.Errorf("Failed to create key for deleting forwarding rule %s, err: %v", name, err)
 		return
 	}
-	if err := utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l.cloud, key, version)); err != nil {
+	if err := utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(lb.cloud, key, version)); err != nil {
 		klog.Errorf("Failed to delete forwarding rule %s, err: %v", name, err)
 	}
 }
