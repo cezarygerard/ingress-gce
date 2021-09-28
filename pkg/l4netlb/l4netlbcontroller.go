@@ -37,15 +37,15 @@ import (
 	"k8s.io/klog"
 )
 
-type L4NetLbController struct{
-	ctx *context.ControllerContext
+type L4NetLbController struct {
+	ctx           *context.ControllerContext
 	svcQueue      utils.TaskQueue
 	numWorkers    int
 	serviceLister cache.Indexer
 	nodeLister    listers.NodeLister
 	stopCh        chan struct{}
 
-	translator *translator.Translator
+	translator  *translator.Translator
 	backendPool *backends.Backends
 	namer       namer.L4ResourcesNamer
 	// enqueueTracker tracks the latest time an update was enqueued
@@ -55,13 +55,13 @@ type L4NetLbController struct{
 	sharedResourcesLock sync.Mutex
 
 	instancePool instances.NodePool
-	igLinker  	 backends.Linker
+	igLinker     backends.Linker
 }
 
 // NewL4NetLbController creates a controller for l4 external loadbalancer.
 func NewL4NetLbController(
-		ctx *context.ControllerContext,
-		stopCh chan struct{}) *L4NetLbController {
+	ctx *context.ControllerContext,
+	stopCh chan struct{}) *L4NetLbController {
 	if ctx.NumL4Workers <= 0 {
 		klog.Infof("L4 Worker count has not been set, setting to 1")
 		ctx.NumL4Workers = 1
@@ -75,10 +75,10 @@ func NewL4NetLbController(
 		serviceLister: ctx.ServiceInformer.GetIndexer(),
 		nodeLister:    listers.NewNodeLister(ctx.NodeInformer.GetIndexer()),
 		stopCh:        stopCh,
-		translator:		 translator.NewTranslator(ctx),
-		backendPool: 	 backendPool,
-		namer:				 ctx.L4Namer,
-		instancePool: instancePool,
+		translator:    translator.NewTranslator(ctx),
+		backendPool:   backendPool,
+		namer:         ctx.L4Namer,
+		instancePool:  instancePool,
 		igLinker:      backends.NewInstanceInternalGroupLinker(instancePool, backendPool),
 	}
 	l4netLb.svcQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("l4netLb", "services", l4netLb.numWorkers, l4netLb.sync)
@@ -169,7 +169,7 @@ func (lc *L4NetLbController) processServiceCreateOrUpdate(key string, service *v
 	}
 
 	// Add or create instance groups to the pool
-	if err:= lc.ensureInstanceGroup(service, nodeNames); err != nil {
+	if err := lc.ensureInstanceGroup(service, nodeNames); err != nil {
 		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncInstanceagroupsFailed",
 			"Error syncing instance group: %v", err)
 		return &loadbalancers.SyncResultNetLb{Error: err}

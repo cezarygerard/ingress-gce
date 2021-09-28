@@ -319,7 +319,6 @@ func (l *L4) deleteForwardingRule(name string, version meta.Version) {
 	}
 }
 
-
 // ensureForwardingRule creates a forwarding rule with the given name, if it does not exist. It updates the existing
 // forwarding rule if needed.
 func (l *L4NetLb) ensureForwardingRule(loadBalancerName, bsLink string, existingFwdRule *composite.ForwardingRule, gcecloud *gce.Cloud) (*composite.ForwardingRule, error) {
@@ -331,12 +330,10 @@ func (l *L4NetLb) ensureForwardingRule(loadBalancerName, bsLink string, existing
 	// version used for creating the existing forwarding rule.
 	version := meta.VersionGA
 
-
 	// Determine IP which will be used for this LB. If no forwarding rule has been established
 	// or specified in the Service spec, then requestedIP = "".
 	ipToUse := ilbIPToUse(l.Service, existingFwdRule, "")
-	klog.V(2).Infof("ensureForwardingRule(%v): LoadBalancer IP %s", loadBalancerName,  ipToUse)
-
+	klog.V(2).Infof("ensureForwardingRule(%v): LoadBalancer IP %s", loadBalancerName, ipToUse)
 
 	_, portRange, _, protocol := utils.GetPortsAndProtocol(l.Service.Spec.Ports)
 	// Create the forwarding rule
@@ -352,11 +349,10 @@ func (l *L4NetLb) ensureForwardingRule(loadBalancerName, bsLink string, existing
 		Description:         frDesc,
 		IPAddress:           ipToUse,
 		IPProtocol:          string(protocol),
-		PortRange:   				 portRange[0], //TODO ????
+		PortRange:           portRange[0], //TODO ????
 		LoadBalancingScheme: string(cloud.SchemeExternal),
 		BackendService:      bsLink,
 	}
-
 
 	if existingFwdRule != nil {
 		equal, err := Equal(existingFwdRule, fr)

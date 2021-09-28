@@ -115,7 +115,7 @@ func NewL4HealthCheck(name string, svcName types.NamespacedName, shared bool, pa
 		HttpHealthCheck:    &httpSettings,
 		Type:               "HTTP",
 		Description:        desc,
-		Scope:							scope,
+		Scope:              scope,
 		Region:             region,
 	}
 }

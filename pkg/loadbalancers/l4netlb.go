@@ -45,7 +45,7 @@ type L4NetLb struct {
 	backendPool *backends.Backends
 	scope       meta.KeyType
 	// TODO(52752) change namer for proper NetLb Namer
-	namer       namer.L4ResourcesNamer
+	namer namer.L4ResourcesNamer
 	// recorder is used to generate k8s Events.
 	recorder            record.EventRecorder
 	Service             *corev1.Service
@@ -73,15 +73,15 @@ func NewL4NetLbHandler(service *corev1.Service, cloud *gce.Cloud, scope meta.Key
 		recorder:            recorder,
 		Service:             service,
 		sharedResourcesLock: lock,
-	  NamespacedName: types.NamespacedName{Name: service.Name, Namespace: service.Namespace},
-	  backendPool: backends.NewPool(cloud, namer),
+		NamespacedName:      types.NamespacedName{Name: service.Name, Namespace: service.Namespace},
+		backendPool:         backends.NewPool(cloud, namer),
 	}
 	portId := utils.ServicePortID{Service: l4netlb.NamespacedName}
 	l4netlb.ServicePort = utils.ServicePort{ID: portId,
-																					BackendNamer: l4netlb.namer,
-																					//TODO(kl52752) just for igLinker to work to be removed later!
-																					VMIPNEGEnabled: true,
-																					}
+		BackendNamer: l4netlb.namer,
+		//TODO(kl52752) just for igLinker to work to be removed later!
+		VMIPNEGEnabled: true,
+	}
 	return l4netlb
 }
 

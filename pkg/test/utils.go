@@ -91,12 +91,13 @@ func NewL4ILBService(onlyLocal bool, port int) *api_v1.Service {
 	}
 	return svc
 }
+
 // NewL4NetLBService creates a Service of type LoadBalancer.
 func NewL4NetLBService(port int) *api_v1.Service {
 	svc := &api_v1.Service{
 		ObjectMeta: meta_v1.ObjectMeta{
-			Name:        testServiceName,
-			Namespace:   testServiceNamespace,
+			Name:      testServiceName,
+			Namespace: testServiceNamespace,
 		},
 		Spec: api_v1.ServiceSpec{
 			Type:            api_v1.ServiceTypeLoadBalancer,

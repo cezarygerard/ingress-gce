@@ -244,7 +244,7 @@ func (l *instanceInternalGroupLinker) Link(sp utils.ServicePort, groups []GroupK
 	//maxRPS := float64(1)
 	for _, igLink := range igLinks {
 		b := &composite.Backend{
-			Group:              igLink,
+			Group: igLink,
 			//BalancingMode:      string("RATE"),
 			//MaxRatePerInstance: maxRPS,
 		}
