@@ -59,9 +59,7 @@ type L4NetLbController struct {
 }
 
 // NewL4NetLbController creates a controller for l4 external loadbalancer.
-func NewL4NetLbController(
-	ctx *context.ControllerContext,
-	stopCh chan struct{}) *L4NetLbController {
+func NewL4NetLbController(ctx *context.ControllerContext, stopCh chan struct{}) *L4NetLbController {
 	if ctx.NumL4Workers <= 0 {
 		klog.Infof("L4 Worker count has not been set, setting to 1")
 		ctx.NumL4Workers = 1
@@ -69,19 +67,21 @@ func NewL4NetLbController(
 
 	backendPool := backends.NewPool(ctx.Cloud, ctx.L4Namer)
 	instancePool := instances.NewNodePool(ctx.Cloud, ctx.ClusterNamer, ctx, utils.GetBasePath(ctx.Cloud))
+	translator := translator.NewTranslator(ctx)
 	l4netLb := &L4NetLbController{
 		ctx:           ctx,
 		numWorkers:    ctx.NumL4Workers,
 		serviceLister: ctx.ServiceInformer.GetIndexer(),
 		nodeLister:    listers.NewNodeLister(ctx.NodeInformer.GetIndexer()),
 		stopCh:        stopCh,
-		translator:    translator.NewTranslator(ctx),
+		translator:    translator,
 		backendPool:   backendPool,
 		namer:         ctx.L4Namer,
 		instancePool:  instancePool,
 		igLinker:      backends.NewInstanceInternalGroupLinker(instancePool, backendPool),
 	}
 	l4netLb.svcQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("l4netLb", "services", l4netLb.numWorkers, l4netLb.sync)
+	l4netLb.instancePool.Init(translator)
 
 	ctx.ServiceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
@@ -110,11 +110,6 @@ func NewL4NetLbController(
 func (lc *L4NetLbController) checkHealth() error {
 	//TODO(kl52752)
 	return nil
-}
-
-//Init inits instance Pool
-func (lc *L4NetLbController) Init() {
-	lc.instancePool.Init(lc.translator)
 }
 
 // Run starts the loadbalancer controller.
@@ -151,6 +146,12 @@ func (lc *L4NetLbController) sync(key string) error {
 		return result.Error
 	}
 	klog.V(3).Infof("Ignoring sync of service %s, neither delete nor ensure needed.", key)
+	return nil
+}
+
+func (l4netlbc *L4NetLbController) processServiceDeletion(key string, svc *v1.Service) *loadbalancers.SyncResultNetLb {
+	klog.V(0).Infof(" L4netLbController processServiceDeletion")
+	// TODO (czawadka) implement deletion
 	return nil
 }
 

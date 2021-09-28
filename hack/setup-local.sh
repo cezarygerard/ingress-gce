@@ -42,13 +42,14 @@ fi
 if [ $(echo "${cluster}" | wc -l) -gt 1 ]; then
     echo "ERROR: more than one cluster matches '${clusterName}'"
 fi
+
 parseCluster ${clusters}
 if [ -z  "${clusters}" ]; then
     echo "ERROR: No cluster '${clusterName}' found"
     exit 1
 fi
-
-instance=$(gcloud compute instances list --format='value(name,zone)' | grep ${clusterName} | tail -n 1)
+# TODO (czawadka) fix the grep
+instance=$(gcloud compute instances list --format='value(name,zone)' | tail -n 1)
 parseInstance ${instance}
 if [ -z  "${instance}" ]; then
     echo "ERROR: No nodes matching '${clusterName}' found"

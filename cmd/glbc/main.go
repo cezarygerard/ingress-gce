@@ -351,7 +351,6 @@ func runControllers(ctx *ingctx.ControllerContext) {
 
 	if flags.F.RunL4NetLbController {
 		l4netlbController := l4netlb.NewL4NetLbController(ctx, stopCh)
-		l4netlbController.Init()
 		go l4netlbController.Run()
 		klog.V(0).Infof("L4NetLb controller started")
 	}

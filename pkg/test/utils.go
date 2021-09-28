@@ -28,6 +28,7 @@ const (
 	FinalizerRemoveFlag       = flag("enable-finalizer-remove")
 	EnableV2FrontendNamerFlag = flag("enable-v2-frontend-namer")
 	testServiceName           = "ilbtest"
+	testNetLBServiceName      = "netLbTest"
 	testServiceNamespace      = "default"
 )
 
@@ -96,7 +97,7 @@ func NewL4ILBService(onlyLocal bool, port int) *api_v1.Service {
 func NewL4NetLBService(port int) *api_v1.Service {
 	svc := &api_v1.Service{
 		ObjectMeta: meta_v1.ObjectMeta{
-			Name:      testServiceName,
+			Name:      testNetLBServiceName,
 			Namespace: testServiceNamespace,
 		},
 		Spec: api_v1.ServiceSpec{

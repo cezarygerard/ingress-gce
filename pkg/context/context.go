@@ -142,6 +142,7 @@ func NewControllerContext(
 	clusterNamer *namer.Namer,
 	kubeSystemUID types.UID,
 	config ControllerContextConfig) *ControllerContext {
+
 	context := &ControllerContext{
 		KubeConfig:              kubeConfig,
 		KubeClient:              kubeClient,
