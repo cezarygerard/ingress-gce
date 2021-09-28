@@ -17,7 +17,6 @@ limitations under the License.
 package loadbalancers
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -45,6 +44,7 @@ type L4NetLb struct {
 	cloud       *gce.Cloud
 	backendPool *backends.Backends
 	scope       meta.KeyType
+	// TODO(52752) change namer for proper NetLb Namer
 	namer       namer.L4ResourcesNamer
 	// recorder is used to generate k8s Events.
 	recorder            record.EventRecorder
@@ -65,7 +65,7 @@ type SyncResultNetLb struct {
 	StartTime          time.Time
 }
 
-// NewL4NetLbHandler creates a new L4Handler for the given L4NetLb service.
+// NewL4NetLbHandler creates a new Handler for the given L4NetLb service.
 func NewL4NetLbHandler(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, namer namer.L4ResourcesNamer, recorder record.EventRecorder, lock *sync.Mutex) *L4NetLb {
 	l4netlb := &L4NetLb{cloud: cloud,
 		scope:               scope,
@@ -76,10 +76,12 @@ func NewL4NetLbHandler(service *corev1.Service, cloud *gce.Cloud, scope meta.Key
 	  NamespacedName: types.NamespacedName{Name: service.Name, Namespace: service.Namespace},
 	  backendPool: backends.NewPool(cloud, namer),
 	}
-	l4netlb.ServicePort = utils.ServicePort{ID: utils.ServicePortID{Service: l4netlb.NamespacedName},
-																																	BackendNamer: l4netlb.namer,
-																																	VMIPNEGEnabled: true, //TODO just for igLinker to work to be removed later!
-	}
+	portId := utils.ServicePortID{Service: l4netlb.NamespacedName}
+	l4netlb.ServicePort = utils.ServicePort{ID: portId,
+																					BackendNamer: l4netlb.namer,
+																					//TODO(kl52752) just for igLinker to work to be removed later!
+																					VMIPNEGEnabled: true,
+																					}
 	return l4netlb
 }
 
@@ -91,29 +93,24 @@ func (l *L4NetLb) CreateKey(name string) (*meta.Key, error) {
 // EnsureNetLbDeleted performs a cleanup of all GCE resources for the given loadbalancer service.
 func (l *L4NetLb) EnsureNetLbDeleted(svc *corev1.Service) *SyncResultNetLb {
 	klog.V(2).Infof("EnsureNetLbDeleted(%s): attempting delete of load balancer resources", l.NamespacedName.String())
-	sharedHC := true
+	sharedHC := true // TODO(52752) set shared based on service params
 	result := &SyncResultNetLb{SyncType: SyncTypeDelete, StartTime: time.Now()}
-	// TODO change namer for proper NetLb Namer
-	name, ok := l.namer.VMIPNEG(svc.Namespace, svc.Name)
-	if !ok {
-		result.Error = fmt.Errorf("Namer does not support L4NetLb VMIPNEGs")
-		return result
-	}
+	name, _ := l.namer.VMIPNEG(svc.Namespace, svc.Name)
 	frName := l.GetFRName()
 	key, err := l.CreateKey(frName)
 	if err != nil {
-		klog.Errorf("Failed to create key for NetLb LoadBalancer resources with name %s for service %s, err %v", frName, l.NamespacedName.String(), err)
+		klog.Errorf("Failed to create key for NetLb resources with name %s for service %s, err %v", frName, l.NamespacedName.String(), err)
 		result.Error = err
 		return result
 	}
 	// If any resource deletion fails, log the error and continue cleanup.
 	if err = utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l.cloud, key, meta.VersionGA)); err != nil {
-		klog.Errorf("Failed to delete forwarding rule for netlb loadbalancer service %s, err %v", l.NamespacedName.String(), err)
+		klog.Errorf("Failed to delete forwarding rule for NetLb service %s, err %v", l.NamespacedName.String(), err)
 		result.Error = err
 		result.GCEResourceInError = annotations.ForwardingRuleResource
 	}
 	if err = ensureAddressDeleted(l.cloud, name, l.cloud.Region()); err != nil {
-		klog.Errorf("Failed to delete address for netlb loadbalancer service %s, err %v", l.NamespacedName.String(), err)
+		klog.Errorf("Failed to delete address for NetLb service %s, err %v", l.NamespacedName.String(), err)
 		result.Error = err
 		result.GCEResourceInError = annotations.AddressResource
 	}
@@ -132,7 +129,7 @@ func (l *L4NetLb) EnsureNetLbDeleted(svc *corev1.Service) *SyncResultNetLb {
 	// delete firewall rule allowing load balancer source ranges
 	err = deleteFunc(name)
 	if err != nil {
-		klog.Errorf("Failed to delete firewall rule %s for internal loadbalancer service %s, err %v", name, l.NamespacedName.String(), err)
+		klog.Errorf("Failed to delete firewall rule %s for NetLb service %s, err %v", name, l.NamespacedName.String(), err)
 		result.GCEResourceInError = annotations.FirewallRuleResource
 		result.Error = err
 	}
@@ -140,7 +137,7 @@ func (l *L4NetLb) EnsureNetLbDeleted(svc *corev1.Service) *SyncResultNetLb {
 	// delete firewall rule allowing healthcheck source ranges
 	err = deleteFunc(hcFwName)
 	if err != nil {
-		klog.Errorf("Failed to delete firewall rule %s for internal loadbalancer service %s, err %v", hcFwName, l.NamespacedName.String(), err)
+		klog.Errorf("Failed to delete firewall rule %s for NetLB service %s, err %v", hcFwName, l.NamespacedName.String(), err)
 		result.GCEResourceInError = annotations.FirewallForHealthcheckResource
 		result.Error = err
 	}
@@ -160,7 +157,7 @@ func (l *L4NetLb) EnsureNetLbDeleted(svc *corev1.Service) *SyncResultNetLb {
 	err = utils.IgnoreHTTPNotFound(healthchecks.DeleteHealthCheck(l.cloud, hcName, meta.Regional))
 	if err != nil {
 		if !utils.IsInUsedByError(err) {
-			klog.Errorf("Failed to delete healthcheck for netlb loadbalancer service %s, err %v", l.NamespacedName.String(), err)
+			klog.Errorf("Failed to delete healthcheck for NetLb service %s, err %v", l.NamespacedName.String(), err)
 			result.GCEResourceInError = annotations.HealthcheckResource
 			result.Error = err
 			return result
@@ -172,7 +169,7 @@ func (l *L4NetLb) EnsureNetLbDeleted(svc *corev1.Service) *SyncResultNetLb {
 	return result
 }
 
-// GetFRName returns the name of the forwarding rule for the given Net LB service.
+// GetFRName returns the name of the forwarding rule for the given NetLB service.
 // This appends the protocol to the forwarding rule name, which will help supporting multiple protocols in the same service.
 func (l *L4NetLb) GetFRName() string {
 	_, _, _, protocol := utils.GetPortsAndProtocol(l.Service.Spec.Ports)
@@ -197,16 +194,11 @@ func (l *L4NetLb) EnsureNetLoadBalancer(nodeNames []string, svc *corev1.Service)
 	}
 
 	l.Service = svc
-	// TODO(kl52752) change namer for NetLb
-	name, ok := l.namer.VMIPNEG(l.Service.Namespace, l.Service.Name)
-	if !ok {
-		result.Error = fmt.Errorf("Namer does not support L4NetLb VMIPNEGs")
-		return result
-	}
+	name, _ := l.namer.VMIPNEG(l.Service.Namespace, l.Service.Name)
 
 	// create healthcheck
-	// TODO(kl52752) cover shared HC in test v
-	sharedHC := !helpers.RequestsOnlyLocalTraffic(l.Service)
+	// TODO(52752) set shared based on service params
+	sharedHC := true
 
 	hcName, hcFwName := l.namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
 	hcPath, hcPort := gce.GetNodesHealthCheckPath(), gce.GetNodesHealthCheckPort()
@@ -297,7 +289,7 @@ func (l *L4NetLb) EnsureNetLoadBalancer(nodeNames []string, svc *corev1.Service)
 	frName := l.GetFRName()
 	fr, err := l.ensureForwardingRule(frName, bs.SelfLink, existingFR, l.cloud)
 	if err != nil {
-		klog.Errorf("EnsureINetLoadBalancer: Failed to create forwarding rule - %v", err)
+		klog.Errorf("EnsureNetLoadBalancer: Failed to create forwarding rule - %v", err)
 		result.GCEResourceInError = annotations.ForwardingRuleResource
 		result.Error = err
 		return result
