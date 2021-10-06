@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2021 The Kubernetes Authors.
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
@@ -15,54 +15,46 @@ package backends
 
 import (
 	"fmt"
-	"net/http"
 
+	cloudprovider "github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/klog"
 )
 
-// regionalInstanceGroupLinker handles linking backends to InstanceGroup's.
-type regionalInstanceGroupLinker struct {
+// RegionalInstanceGroupLinker handles linking backends to InstanceGroups.
+type RegionalInstanceGroupLinker struct {
 	instancePool instances.NodePool
 	backendPool  Pool
 }
 
-// regionalInstanceGroupLinker is a Linker
-var _ Linker = (*regionalInstanceGroupLinker)(nil)
-
-func NewRegionalInstanceGroupLinker(instancePool instances.NodePool, backendPool Pool) Linker {
-	return &regionalInstanceGroupLinker{
+func NewRegionalInstanceGroupLinker(instancePool instances.NodePool, backendPool Pool) *RegionalInstanceGroupLinker {
+	return &RegionalInstanceGroupLinker{
 		instancePool: instancePool,
 		backendPool:  backendPool,
 	}
 }
 
 // Link performs linking instance groups to regional backend service
-func (linker *regionalInstanceGroupLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
+func (linker *RegionalInstanceGroupLinker) Link(sp utils.ServicePort, projectID string, zones []string) error {
 	var igLinks []string
 
-	for _, group := range groups {
-		ig, err := linker.instancePool.Get(sp.IGName(), group.Zone)
-		if err != nil {
-			klog.V(2).Infof("Error linking IG %s Zone: %s", sp.IGName(), group.Zone)
-			return fmt.Errorf("error retrieving IG for linking with backend %+v: %w", sp, err)
-		}
-		igLinks = append(igLinks, ig.SelfLink)
+	for _, zone := range zones {
+		key := meta.ZonalKey(sp.IGName(), zone)
+		iGSelfLink := cloudprovider.SelfLink(meta.VersionGA, projectID, "instanceGroups", key)
+		igLinks = append(igLinks, iGSelfLink)
 	}
 
 	addIGs := sets.String{}
 	for _, igLink := range igLinks {
 		path, err := utils.RelativeResourceName(igLink)
 		if err != nil {
-			return fmt.Errorf("failed to parse instance group: %w", err)
+			return fmt.Errorf("failed to parse instance group %s: %w", igLink, err)
 		}
 		addIGs.Insert(path)
 	}
-	klog.V(2).Infof("IG to Add %v", addIGs)
 	if len(addIGs) == 0 {
 		return nil
 	}
@@ -81,10 +73,7 @@ func (linker *regionalInstanceGroupLinker) Link(sp utils.ServicePort, groups []G
 	be.Backends = newBackends
 
 	if err := linker.backendPool.Update(be); err != nil {
-		if utils.IsHTTPErrorCode(err, http.StatusBadRequest) {
-			klog.V(2).Infof("Updating backend service for Ig failed, err:%v", err)
-			return err
-		}
+		return fmt.Errorf("updating backend service %s for IG failed, err:%w", sp.BackendName(), err)
 	}
 	return nil
 }

@@ -19,6 +19,7 @@ package l4netlb
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/core/v1"
@@ -37,31 +38,35 @@ import (
 	"k8s.io/klog"
 )
 
-type L4NetLbController struct {
+const (
+	// The max tolerated delay between update being enqueued and sync being invoked.
+	enqueueToSyncDelayThreshold = 15 * time.Minute
+)
+
+type L4NetLBController struct {
 	ctx           *context.ControllerContext
 	svcQueue      utils.TaskQueue
-	numWorkers    int
 	serviceLister cache.Indexer
 	nodeLister    listers.NodeLister
 	stopCh        chan struct{}
 
-	translator  *translator.Translator
-	backendPool *backends.Backends
-	namer       namer.L4ResourcesNamer
+	translator *translator.Translator
+	namer      namer.L4ResourcesNamer
 	// enqueueTracker tracks the latest time an update was enqueued
 	enqueueTracker utils.TimeTracker
 	// syncTracker tracks the latest time an enqueued service was synced
 	syncTracker         utils.TimeTracker
 	sharedResourcesLock sync.Mutex
 
+	backendPool  *backends.Backends
 	instancePool instances.NodePool
-	igLinker     backends.Linker
+	igLinker     *backends.RegionalInstanceGroupLinker
 }
 
-// NewL4NetLbController creates a controller for l4 external loadbalancer.
-func NewL4NetLbController(
+// NewL4NetLBController creates a controller for l4 external loadbalancer.
+func NewL4NetLBController(
 	ctx *context.ControllerContext,
-	stopCh chan struct{}) *L4NetLbController {
+	stopCh chan struct{}) *L4NetLBController {
 	if ctx.NumL4Workers <= 0 {
 		klog.Infof("L4 Worker count has not been set, setting to 1")
 		ctx.NumL4Workers = 1
@@ -69,9 +74,8 @@ func NewL4NetLbController(
 
 	backendPool := backends.NewPool(ctx.Cloud, ctx.L4Namer)
 	instancePool := instances.NewNodePool(ctx.Cloud, ctx.ClusterNamer, ctx, utils.GetBasePath(ctx.Cloud))
-	l4netLb := &L4NetLbController{
+	l4netLBc := &L4NetLBController{
 		ctx:           ctx,
-		numWorkers:    ctx.NumL4Workers,
 		serviceLister: ctx.ServiceInformer.GetIndexer(),
 		nodeLister:    listers.NewNodeLister(ctx.NodeInformer.GetIndexer()),
 		stopCh:        stopCh,
@@ -81,69 +85,78 @@ func NewL4NetLbController(
 		instancePool:  instancePool,
 		igLinker:      backends.NewRegionalInstanceGroupLinker(instancePool, backendPool),
 	}
-	l4netLb.svcQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("l4netLb", "services", l4netLb.numWorkers, l4netLb.sync)
+	l4netLBc.svcQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("l4netLB", "services", ctx.NumL4Workers, l4netLBc.sync)
 
 	ctx.ServiceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			addSvc := obj.(*v1.Service)
 			svcKey := utils.ServiceKeyFunc(addSvc.Namespace, addSvc.Name)
-			needsNetLB, svcType := annotations.WantsNewL4NetLb(addSvc)
+			needsNetLB, svcType := annotations.WantsL4NetLB(addSvc)
+			//TODO (kl52752) Add check for deletion
 			if needsNetLB {
-				klog.V(3).Infof("NetLB Service %s added, enqueuing", svcKey)
-				l4netLb.ctx.Recorder(addSvc.Namespace).Eventf(addSvc, v1.EventTypeNormal, "ADD", svcKey)
-				l4netLb.svcQueue.Enqueue(addSvc)
-				l4netLb.enqueueTracker.Track()
+				klog.V(3).Infof("L4 External LoadBalancer Service %s added, enqueuing", svcKey)
+				l4netLBc.ctx.Recorder(addSvc.Namespace).Eventf(addSvc, v1.EventTypeNormal, "ADD", svcKey)
+				l4netLBc.svcQueue.Enqueue(addSvc)
+				l4netLBc.enqueueTracker.Track()
 			} else {
-				klog.V(4).Infof("L4NetLb Ignoring add for non-lb service %s based on %v", svcKey, svcType)
+				klog.V(4).Infof("Ignoring add for non external lb service %s based on %v", svcKey, svcType)
 			}
 		},
 		// Deletes will be handled in the Update when the deletion timestamp is set.
 		UpdateFunc: func(old, cur interface{}) {
-			//TODO(kl52752) add implementation
+			//TODO(kl52752) add implementation and check for deletion
 		},
 	})
-	klog.Infof("l4NetLbController started")
-	ctx.AddHealthCheck("service-controller health", l4netLb.checkHealth)
-	return l4netLb
+	klog.Infof("l4NetLBController started")
+	ctx.AddHealthCheck("service-controller health", l4netLBc.checkHealth)
+	return l4netLBc
 }
 
-func (lc *L4NetLbController) checkHealth() error {
-	//TODO(kl52752) add implementation
+func (lc *L4NetLBController) checkHealth() error {
+	lastEnqueueTime := lc.enqueueTracker.Get()
+	lastSyncTime := lc.syncTracker.Get()
+	// if lastEnqueue time is more than 15 minutes before the last sync time, the controller is falling behind.
+	// This indicates that the controller was stuck handling a previous update, or sync function did not get invoked.
+	syncTimeLatest := lastEnqueueTime.Add(enqueueToSyncDelayThreshold)
+	if lastSyncTime.After(syncTimeLatest) {
+		msg := fmt.Sprintf("L4 External LoadBalancer Sync happened at time %v - %v after enqueue time, threshold is %v", lastSyncTime, lastSyncTime.Sub(lastEnqueueTime), enqueueToSyncDelayThreshold)
+		klog.Error(msg)
+	}
 	return nil
 }
 
 //Init inits instance Pool
-func (lc *L4NetLbController) Init() {
+func (lc *L4NetLBController) Init() {
 	lc.instancePool.Init(lc.translator)
 }
 
 // Run starts the loadbalancer controller.
-func (lc *L4NetLbController) Run() {
-	klog.Infof("Starting l4NetLbController")
+func (lc *L4NetLBController) Run() {
+	klog.Infof("Starting l4NetLBController")
 	lc.svcQueue.Run()
 
 	<-lc.stopCh
-	klog.Infof("Shutting down l4NetLbController")
+	klog.Infof("Shutting down l4NetLBController")
 }
 
-func (lc *L4NetLbController) shutdown() {
-	klog.Infof("Shutting down l4NetLbController")
+func (lc *L4NetLBController) shutdown() {
+	klog.Infof("Shutting down l4NetLBController")
 	lc.svcQueue.Shutdown()
 }
 
-func (lc *L4NetLbController) sync(key string) error {
+func (lc *L4NetLBController) sync(key string) error {
 	lc.syncTracker.Track()
 	svc, exists, err := lc.ctx.Services().GetByKey(key)
 	if err != nil {
-		return fmt.Errorf("Failed to lookup NetLb service for key %s : %w", key, err)
+		return fmt.Errorf("Failed to lookup L4 External LoadBalancer service for key %s : %w", key, err)
 	}
 	if !exists || svc == nil {
-		klog.V(3).Infof("Ignoring delete of service %s not managed by L4NetLbController", key)
+		klog.V(3).Infof("ignoring sync of non-existent service %s", key)
 		return nil
 	}
-	var result *loadbalancers.SyncResultNetLb
-	if wantsNetLb, _ := annotations.WantsNewL4NetLb(svc); wantsNetLb {
-		result = lc.processServiceCreateOrUpdate(key, svc)
+	var result *loadbalancers.SyncResultNetLB
+	if wantsNetLB, _ := annotations.WantsL4NetLB(svc); wantsNetLB {
+		result = lc.syncInternal(svc)
 		if result == nil {
 			// result will be nil if the service was ignored(due to presence of service controller finalizer).
 			return nil
@@ -154,10 +167,10 @@ func (lc *L4NetLbController) sync(key string) error {
 	return nil
 }
 
-// processServiceCreateOrUpdate ensures load balancer resources for the given service, as needed.
+// syncInternal ensures load balancer resources for the given service, as needed.
 // Returns an error if processing the service update failed.
-func (lc *L4NetLbController) processServiceCreateOrUpdate(key string, service *v1.Service) *loadbalancers.SyncResultNetLb {
-	l4netlb := loadbalancers.NewL4NetLb(service, lc.ctx.Cloud, meta.Regional, lc.namer, lc.ctx.Recorder(service.Namespace), &lc.sharedResourcesLock)
+func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.SyncResultNetLB {
+	l4netlb := loadbalancers.NewL4NetLB(service, lc.ctx.Cloud, meta.Regional, lc.namer, lc.ctx.Recorder(service.Namespace), &lc.sharedResourcesLock)
 	if !lc.shouldProcessService(service, l4netlb) {
 		return nil
 	}
@@ -165,62 +178,59 @@ func (lc *L4NetLbController) processServiceCreateOrUpdate(key string, service *v
 	// #TODO(kl52752) Add ensure finalizer for NetLB
 	nodeNames, err := utils.GetReadyNodeNames(lc.nodeLister)
 	if err != nil {
-		return &loadbalancers.SyncResultNetLb{Error: err}
+		return &loadbalancers.SyncResultNetLB{Error: err}
 	}
 
-	if err := lc.ensureInstanceGroup(service, nodeNames); err != nil {
-		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncInstanceagroupsFailed",
+	if err := lc.ensureInstanceGroups(service, nodeNames); err != nil {
+		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncInstanceGroupsFailed",
 			"Error syncing instance group: %v", err)
-		return &loadbalancers.SyncResultNetLb{Error: err}
+		return &loadbalancers.SyncResultNetLB{Error: err}
 	}
 
 	// Use the same function for both create and updates. If controller crashes and restarts,
 	// all existing services will show up as Service Adds.
-	syncResult := l4netlb.EnsureNetLoadBalancer(nodeNames, service)
+	syncResult := l4netlb.EnsureBackendService(nodeNames, service)
 	if syncResult.Error != nil {
-		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
-			"Error syncing l4 net load balancer: %v", syncResult.Error)
+		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
+			"Error ensuring BackendService for L4 External LoadBalancer: %v", syncResult.Error)
 		return syncResult
 	}
 
-	if err = lc.linkIgToBackendService(l4netlb.ServicePort); err != nil {
-		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
+	if err = lc.ensureBackendLinking(l4netlb.ServicePort); err != nil {
+		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
 			"Error linking instance groups to backend service status: %v", err)
 		syncResult.Error = err
 		return syncResult
 	}
 
-	err = lc.updateServiceStatus(service, syncResult.Status)
+	err = lc.ensureServiceStatus(service, syncResult.Status)
 	if err != nil {
-		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
-			"Error updating l4 net load balancer status: %v", err)
+		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
+			"Error updating L4 External LoadBalancer status: %v", err)
 		syncResult.Error = err
 		return syncResult
 	}
 	lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeNormal, "SyncLoadBalancerSuccessful",
-		"Successfully ensured l4 net load balancer resources")
+		"Successfully ensured L4 External LoadBalancer resources")
 	return nil
 }
 
-func (lc *L4NetLbController) linkIgToBackendService(port utils.ServicePort) error {
-	zones, err := lc.translator.ListZones(utils.AllNodesPredicate)
+func (lc *L4NetLBController) ensureBackendLinking(port utils.ServicePort) error {
+	zones, err := lc.translator.ListZones(utils.CandidateNodesPredicate)
 	if err != nil {
 		return err
 	}
-	var groupKeys []backends.GroupKey
-	for _, zone := range zones {
-		groupKeys = append(groupKeys, backends.GroupKey{Zone: zone})
-	}
-	return lc.igLinker.Link(port, groupKeys)
+	return lc.igLinker.Link(port, lc.ctx.Cloud.ProjectID(), zones)
 }
 
 // shouldProcessService returns if the given LoadBalancer service should be processed by this controller.
-func (lc *L4NetLbController) shouldProcessService(service *v1.Service, l4 *loadbalancers.L4NetLb) bool {
+func (lc *L4NetLBController) shouldProcessService(service *v1.Service, l4 *loadbalancers.L4NetLB) bool {
 	//TODO(kl52752) add implementation
 	return true
 }
 
-func (lc *L4NetLbController) ensureInstanceGroup(service *v1.Service, nodeNames []string) error {
+func (lc *L4NetLBController) ensureInstanceGroups(service *v1.Service, nodeNames []string) error {
+	// TODO(kl52752) implement limit for 1000 nodes in ingsrance group
 	_, _, nodePorts, _ := utils.GetPortsAndProtocol(service.Spec.Ports)
 	_, err := lc.instancePool.EnsureInstanceGroupsAndPorts(lc.ctx.ClusterNamer.InstanceGroup(), nodePorts)
 	if err != nil {
@@ -229,7 +239,7 @@ func (lc *L4NetLbController) ensureInstanceGroup(service *v1.Service, nodeNames 
 	return lc.instancePool.Sync(nodeNames)
 }
 
-func (lc *L4NetLbController) updateServiceStatus(svc *v1.Service, newStatus *v1.LoadBalancerStatus) error {
+func (lc *L4NetLBController) ensureServiceStatus(svc *v1.Service, newStatus *v1.LoadBalancerStatus) error {
 	if helpers.LoadBalancerStatusEqual(&svc.Status.LoadBalancer, newStatus) {
 		return nil
 	}

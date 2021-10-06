@@ -33,38 +33,48 @@ const (
 	hcLink        = "some_hc_link"
 )
 
-func newTestRegionalIGLinker(fakeGCE *gce.Cloud, backendPool *Backends, l4Namer *namer.L4Namer) *regionalInstanceGroupLinker {
+func linkerTestClusterValues() gce.TestClusterValues {
+	return gce.TestClusterValues{
+		ProjectID:   "mock-project",
+		Region:      "us-central1",
+		ZoneName:    "us-central1-a",
+		ClusterID:   "test-cluster-id",
+		ClusterName: "Test Cluster Name",
+	}
+}
+
+func newTestRegionalIGLinker(fakeGCE *gce.Cloud, backendPool *Backends, l4Namer *namer.L4Namer) *RegionalInstanceGroupLinker {
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), l4Namer.Namer)
 	fakeInstancePool := instances.NewNodePool(fakeIGs, l4Namer, &test.FakeRecorderSource{}, utils.GetBasePath(fakeGCE))
 	fakeInstancePool.Init(&instances.FakeZoneLister{Zones: []string{uscentralzone}})
 
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockRegionBackendServices.UpdateHook = mock.UpdateRegionBackendServiceHook
 
-	return &regionalInstanceGroupLinker{fakeInstancePool, backendPool}
+	return &RegionalInstanceGroupLinker{fakeInstancePool, backendPool}
 }
 
 func TestRegionalLink(t *testing.T) {
 	t.Parallel()
-	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	fakeGCE := gce.NewFakeGCECloud(linkerTestClusterValues())
 	clusterID, _ := fakeGCE.ClusterID.GetID()
 	l4Namer := namer.NewL4Namer("uid1", namer.NewNamer(clusterID, ""))
 	sp := utils.ServicePort{NodePort: 8080, BackendNamer: l4Namer}
 	fakeBackendPool := NewPool(fakeGCE, l4Namer)
 	linker := newTestRegionalIGLinker(fakeGCE, fakeBackendPool, l4Namer)
 
-	if err := linker.Link(sp, []GroupKey{{Zone: uscentralzone}}); err == nil {
+	if err := linker.Link(sp, fakeGCE.ProjectID(), []string{uscentralzone}); err == nil {
 		t.Fatalf("Linking when instances does not exist should return error")
 	}
 	if _, err := linker.instancePool.EnsureInstanceGroupsAndPorts(l4Namer.InstanceGroup(), []int64{sp.NodePort}); err != nil {
-		t.Fatalf("Did not expect error when ensuring IG for ServicePort %+v: %v", sp, err)
+		t.Fatalf("Unexpected error when ensuring IG for ServicePort %+v: %v", sp, err)
 	}
-	if err := linker.Link(sp, []GroupKey{{Zone: uscentralzone}}); err == nil {
+	if err := linker.Link(sp, fakeGCE.ProjectID(), []string{uscentralzone}); err == nil {
 		t.Fatalf("Linking when backend service does not exist should return error")
 	}
 	createBackendService(t, sp, fakeBackendPool)
 
-	if err := linker.Link(sp, []GroupKey{{Zone: uscentralzone}}); err != nil {
-		t.Fatalf("Does not expect error in Link. Error: %v", err)
+	if err := linker.Link(sp, fakeGCE.ProjectID(), []string{uscentralzone}); err != nil {
+		t.Fatalf("Unexpected error in Link. Error: %v", err)
 	}
 
 	be, err := fakeGCE.GetRegionBackendService(sp.BackendName(), fakeGCE.Region())
@@ -73,6 +83,11 @@ func TestRegionalLink(t *testing.T) {
 	}
 	if len(be.Backends) == 0 {
 		t.Fatalf("Expected Backends to be created")
+	}
+	ig, _ := linker.instancePool.Get(sp.IGName(), uscentralzone)
+
+	if be.Backends[0].Group != ig.SelfLink {
+		t.Fatalf("Expected Backend Group: %s received: %s", ig.SelfLink, be.Backends[0].Group)
 	}
 }
 

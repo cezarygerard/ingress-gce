@@ -349,10 +349,13 @@ func runControllers(ctx *ingctx.ControllerContext) {
 
 	ctx.Start(stopCh)
 
-	if flags.F.RunL4NetLbController {
-		l4netlbController := l4netlb.NewL4NetLbController(ctx, stopCh)
+	if flags.F.RunL4NetLBController {
+		l4netlbController := l4netlb.NewL4NetLBController(ctx, stopCh)
+
+		// Before we can Run controller we need to init instance Pool with translator
+		// transaltor is created in context so we need to do this after context is created
 		l4netlbController.Init()
-		klog.V(0).Infof("L4NetLb controller started")
+		klog.V(0).Infof("L4NetLB controller started")
 		go l4netlbController.Run()
 	}
 	lbc.Init()

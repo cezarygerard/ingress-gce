@@ -17,6 +17,7 @@ limitations under the License.
 package loadbalancers
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -39,12 +40,12 @@ import (
 	"k8s.io/legacy-cloud-providers/gce"
 )
 
-// L4NetLb handles the resource creation/deletion/update for a given L4NetLb service.
-type L4NetLb struct {
+// L4NetLB handles the resource creation/deletion/update for a given L4NetLB service.
+type L4NetLB struct {
 	cloud       *gce.Cloud
 	backendPool *backends.Backends
 	scope       meta.KeyType
-	// TODO(52752) change namer for proper NetLb Namer
+	// TODO(52752) change namer for proper NetLB Namer
 	namer namer.L4ResourcesNamer
 	// recorder is used to generate k8s Events.
 	recorder            record.EventRecorder
@@ -54,9 +55,9 @@ type L4NetLb struct {
 	sharedResourcesLock *sync.Mutex
 }
 
-// SyncResultNetLb contains information about the outcome of an L4NetLb sync. It stores the list of resource name annotations,
+// SyncResultNetLB contains information about the outcome of an L4NetLB sync. It stores the list of resource name annotations,
 // sync error, the GCE resource that hit the error along with the error type and more fields.
-type SyncResultNetLb struct {
+type SyncResultNetLB struct {
 	Annotations        map[string]string
 	Error              error
 	GCEResourceInError string
@@ -65,9 +66,9 @@ type SyncResultNetLb struct {
 	StartTime          time.Time
 }
 
-// NewL4NetLb creates a new Handler for the given L4NetLb service.
-func NewL4NetLb(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, namer namer.L4ResourcesNamer, recorder record.EventRecorder, lock *sync.Mutex) *L4NetLb {
-	l4netlb := &L4NetLb{cloud: cloud,
+// NewL4NetLB creates a new Handler for the given L4NetLB service.
+func NewL4NetLB(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, namer namer.L4ResourcesNamer, recorder record.EventRecorder, lock *sync.Mutex) *L4NetLB {
+	l4netlb := &L4NetLB{cloud: cloud,
 		scope:               scope,
 		namer:               namer,
 		recorder:            recorder,
@@ -84,14 +85,16 @@ func NewL4NetLb(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, n
 }
 
 // createKey generates a meta.Key for a given GCE resource name.
-func (l4netlb *L4NetLb) createKey(name string) (*meta.Key, error) {
+func (l4netlb *L4NetLB) createKey(name string) (*meta.Key, error) {
 	return composite.CreateKey(l4netlb.cloud, name, l4netlb.scope)
 }
 
-// EnsureNetLoadBalancer ensures that all GCE resources for the given loadbalancer service have
-// been created. It returns a LoadBalancerStatus with the updated ForwardingRule IP address.
-func (l4netlb *L4NetLb) EnsureNetLoadBalancer(nodeNames []string, svc *corev1.Service) *SyncResultNetLb {
-	result := &SyncResultNetLb{
+// EnsureBackendService ensures that all frontend resources for the given loadbalancer service have
+// been created. It is health check, firewall rules, backend service and forwarding rule.
+// It returns a LoadBalancerStatus with the updated ForwardingRule IP address.
+// This function does not link instances to Backend Service
+func (l4netlb *L4NetLB) EnsureBackendService(nodeNames []string, svc *corev1.Service) *SyncResultNetLB {
+	result := &SyncResultNetLB{
 		Annotations: make(map[string]string),
 		StartTime:   time.Now(),
 		SyncType:    SyncTypeCreate}
@@ -124,15 +127,15 @@ func (l4netlb *L4NetLb) EnsureNetLoadBalancer(nodeNames []string, svc *corev1.Se
 	bs, err := l4netlb.backendPool.EnsureL4BackendService(name, hcLink, protocol, string(l4netlb.Service.Spec.SessionAffinity), string(cloud.SchemeExternal), l4netlb.NamespacedName, meta.VersionGA)
 	if err != nil {
 		result.GCEResourceInError = annotations.BackendServiceResource
-		result.Error = err
+		result.Error = fmt.Errorf("Failed to ensure backend service - %v", err)
 		return result
 	}
 
-	fr, err := l4netlb.ensureForwardingRule(bs.SelfLink, existingFR)
+	fr, err := l4netlb.ensureExternalForwardingRule(bs.SelfLink, existingFR)
 	if err != nil {
-		klog.Errorf("EnsureNetLoadBalancer: Failed to create forwarding rule - %v", err)
+
 		result.GCEResourceInError = annotations.ForwardingRuleResource
-		result.Error = err
+		result.Error = fmt.Errorf("Failed to ensure forwarding rule - %v", err)
 		return result
 	}
 
@@ -142,16 +145,16 @@ func (l4netlb *L4NetLb) EnsureNetLoadBalancer(nodeNames []string, svc *corev1.Se
 
 // GetFRName returns the name of the forwarding rule for the given NetLB service.
 // This appends the protocol to the forwarding rule name, which will help supporting multiple protocols in the same service.
-func (l4netlb *L4NetLb) GetFRName() string {
+func (l4netlb *L4NetLB) GetFRName() string {
 	_, _, _, protocol := utils.GetPortsAndProtocol(l4netlb.Service.Spec.Ports)
 	return l4netlb.getFRNameWithProtocol(string(protocol))
 }
 
-func (l4netlb *L4NetLb) getFRNameWithProtocol(protocol string) string {
+func (l4netlb *L4NetLB) getFRNameWithProtocol(protocol string) string {
 	return l4netlb.namer.L4ForwardingRule(l4netlb.Service.Namespace, l4netlb.Service.Name, strings.ToLower(protocol))
 }
 
-func (l4netlb *L4NetLb) createHealthCheck() (string, string, int32, error) {
+func (l4netlb *L4NetLB) createHealthCheck() (string, string, int32, error) {
 	// TODO(52752) set shared based on service params
 	sharedHC := true
 	hcName, hcFwName := l4netlb.namer.L4HealthCheck(l4netlb.Service.Namespace, l4netlb.Service.Name, sharedHC)
@@ -168,10 +171,10 @@ func (l4netlb *L4NetLb) createHealthCheck() (string, string, int32, error) {
 	return hcLink, hcFwName, hcPort, err
 }
 
-func (l4netlb *L4NetLb) createFirewalls(name, hcLink, hcFwName string, hcPort int32, nodeNames []string) (string, *SyncResultNetLb) {
+func (l4netlb *L4NetLB) createFirewalls(name, hcLink, hcFwName string, hcPort int32, nodeNames []string) (string, *SyncResultNetLB) {
 	_, portRanges, _, protocol := utils.GetPortsAndProtocol(l4netlb.Service.Spec.Ports)
 	// ensure firewalls
-	result := &SyncResultNetLb{}
+	result := &SyncResultNetLB{}
 	sourceRanges, err := helpers.GetLoadBalancerSourceRanges(l4netlb.Service)
 	if err != nil {
 		result.Error = err
@@ -210,7 +213,7 @@ func (l4netlb *L4NetLb) createFirewalls(name, hcLink, hcFwName string, hcPort in
 	return string(protocol), result
 }
 
-func (l4netlb *L4NetLb) handleBackendProtocolChange(name, protocol string) (*composite.ForwardingRule, error) {
+func (l4netlb *L4NetLB) handleBackendProtocolChange(name, protocol string) (*composite.ForwardingRule, error) {
 	//Check if protocol has changed for this service. In this case, forwarding rule should be deleted before
 	//the backend service can be updated.
 	existingBS, err := l4netlb.backendPool.Get(name, meta.VersionGA, l4netlb.scope)

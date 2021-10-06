@@ -39,23 +39,22 @@ func TestEnsureL4NetLoadBalancer(t *testing.T) {
 	svc := test.NewL4NetLBService(8080)
 	namer := namer_util.NewL4Namer(kubeSystemUID, namer_util.NewNamer(vals.ClusterName, "cluster-fw"))
 
-	l4netlb := NewL4NetLb(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
+	l4netlb := NewL4NetLB(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
 
 	if _, err := test.CreateAndInsertNodes(l4netlb.cloud, nodeNames, vals.ZoneName); err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
-	result := l4netlb.EnsureNetLoadBalancer(nodeNames, svc)
+	result := l4netlb.EnsureBackendService(nodeNames, svc)
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
 	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4netlb)
 	}
-	//result.Status.Ingress[0].IP
 	assertNetLbResources(t, svc, l4netlb, nodeNames)
 }
 
-func assertNetLbResources(t *testing.T, apiService *v1.Service, l4NetLb *L4NetLb, nodeNames []string) {
+func assertNetLbResources(t *testing.T, apiService *v1.Service, l4NetLb *L4NetLB, nodeNames []string) {
 	t.Helper()
 	// Check that Firewalls are created for the LoadBalancer and the HealthCheck
 	resourceName := l4NetLb.ServicePort.BackendName()
