@@ -170,6 +170,7 @@ func EnsureEchoDeployment(s *Sandbox, name string, numReplicas int32, modify fun
 }
 
 func ensureEchoDeployment(s *Sandbox, name string, numReplicas int32, modify func(deployment *apps.Deployment), os OS) error {
+	// echoheadersImage
 	image := echoheadersImage
 	var nodeSelector map[string]string
 	if os == Windows {
