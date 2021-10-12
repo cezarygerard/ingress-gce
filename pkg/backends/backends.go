@@ -122,6 +122,7 @@ func (b *Backends) Update(be *composite.BackendService) error {
 	if err != nil {
 		return err
 	}
+	//CZAWADKA backend gets updated
 	if err := composite.UpdateBackendService(b.cloud, key, be); err != nil {
 		return err
 	}
@@ -244,6 +245,7 @@ func (b *Backends) List(key *meta.Key, version meta.Version) ([]*composite.Backe
 	return clusterBackends, nil
 }
 
+// czawadka l4 backend
 // EnsureL4BackendService creates or updates the backend service with the given name.
 func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinity, scheme string, nm types.NamespacedName, version meta.Version) (*composite.BackendService, error) {
 	klog.V(2).Infof("EnsureL4BackendService(%v, %v, %v): checking existing backend service", name, scheme, protocol)

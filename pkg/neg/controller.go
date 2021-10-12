@@ -433,6 +433,7 @@ func (c *Controller) serviceWorker() {
 	}
 }
 
+// TODO: czawadka
 // processService takes a service and determines whether it needs NEGs or not.
 func (c *Controller) processService(key string) error {
 	defer func() {

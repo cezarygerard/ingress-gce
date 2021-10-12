@@ -193,6 +193,7 @@ func (l *L7) getEffectiveIP() (string, bool, error) {
 	return "", true, nil
 }
 
+// Czawadka - forwarding rules:
 // ensureForwardingRule creates a forwarding rule with the given name, if it does not exist. It updates the existing
 // forwarding rule if needed.
 func (l *L4) ensureForwardingRule(loadBalancerName, bsLink string, options gce.ILBOptions, existingFwdRule *composite.ForwardingRule) (*composite.ForwardingRule, error) {

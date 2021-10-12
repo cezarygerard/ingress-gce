@@ -711,6 +711,7 @@ type BackendServiceConnectionTrackingPolicy struct {
 	// If set to ALWAYS_PERSIST, existing connections always persist on
 	// unhealthy backends regardless of protocol and session affinity. It is
 	// generally not recommended to use this mode overriding the default.
+	// czawadka ConnectionPersistenceOnUnhealthyBackends
 	ConnectionPersistenceOnUnhealthyBackends string `json:"connectionPersistenceOnUnhealthyBackends,omitempty"`
 	// Specifies how long to keep a Connection Tracking entry while there is
 	// no matching traffic (in seconds).
@@ -3569,7 +3570,7 @@ type WeightedBackendService struct {
 	// traffic. Once a user's request has been directed to a backendService,
 	// subsequent requests will be sent to the same backendService as
 	// determined by the BackendService's session affinity policy.
-	// The value must be between 0 and 1000
+	// The value must be between 0 and `1000
 	Weight          int64    `json:"weight,omitempty"`
 	ForceSendFields []string `json:"-"`
 	NullFields      []string `json:"-"`
@@ -3943,6 +3944,7 @@ func UpdateBackendService(gceCloud *gce.Cloud, key *meta.Key, backendService *Ba
 		switch key.Type() {
 		case meta.Regional:
 			klog.V(3).Infof("Updating ga region BackendService %v", ga.Name)
+			//czawdka the real update backend service (intance group)
 			return mc.Observe(gceCloud.Compute().RegionBackendServices().Update(ctx, key, ga))
 		default:
 			klog.V(3).Infof("Updating ga BackendService %v", ga.Name)

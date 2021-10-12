@@ -560,6 +560,7 @@ func (lbc *LoadBalancerController) PostProcess(state interface{}) error {
 	return lbc.updateIngressStatus(syncState.l7, syncState.ing)
 }
 
+// CZAWADKA: actual work picked from the queue
 // preSyncGC is intended to execute GC logic before sync if necessary. e.g. Ingress ing has deletion timestamp.
 // preSyncGC returns if the sync needs to take place or not.
 func (lbc *LoadBalancerController) preSyncGC(key string, scope meta.KeyType, ingExists bool, ing *v1.Ingress) (bool, error) {

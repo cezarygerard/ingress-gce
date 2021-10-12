@@ -52,7 +52,7 @@ func NewNEGLinker(
 		svcNegLister: svcNegLister,
 	}
 }
-
+// CZAWADKA link NEG to the backend
 // Link implements Link.
 func (l *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 	version := befeatures.VersionFromServicePort(&sp)

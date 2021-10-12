@@ -71,6 +71,7 @@ func (i *Instances) Init(zl ZoneLister) {
 	i.ZoneLister = zl
 }
 
+//	CZAWADKA ig creates or gets an instance group
 // EnsureInstanceGroupsAndPorts creates or gets an instance group if it doesn't exist
 // and adds the given ports to it. Returns a list of one instance group per zone,
 // all of which have the exact same named ports.
@@ -92,6 +93,7 @@ func (i *Instances) EnsureInstanceGroupsAndPorts(name string, ports []int64) (ig
 	return igs, nil
 }
 
+// czawadka - ensure ensureInstanceGroupAndPorts internal!
 func (i *Instances) ensureInstanceGroupAndPorts(name, zone string, ports []int64) (*compute.InstanceGroup, error) {
 	ig, err := i.Get(name, zone)
 	if err != nil && !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
@@ -100,6 +102,7 @@ func (i *Instances) ensureInstanceGroupAndPorts(name, zone string, ports []int64
 	}
 
 	if ig == nil {
+		//czawadka creating instance group
 		klog.V(3).Infof("Creating instance group %v/%v.", zone, name)
 		if err = i.cloud.CreateInstanceGroup(&compute.InstanceGroup{Name: name}, zone); err != nil {
 			// Error may come back with StatusConflict meaning the instance group was created by another controller
@@ -270,7 +273,7 @@ func (i *Instances) getInstanceReferences(zone string, nodeNames []string) (refs
 	return refs
 }
 
-// Add adds the given instances to the appropriately zoned Instance Group.
+// czawadka Add adds the given instances to the appropriately zoned Instance Group.
 func (i *Instances) Add(groupName string, names []string) error {
 	events.GlobalEventf(i.recorder, core.EventTypeNormal, events.AddNodes, "Adding %s to InstanceGroup %q", events.TruncatedStringList(names), groupName)
 	var errs []error
@@ -308,6 +311,7 @@ func (i *Instances) Remove(groupName string, names []string) error {
 	return err
 }
 
+// CZAWADKA Sync nodes with the instances in the instance group
 // Sync nodes with the instances in the instance group.
 func (i *Instances) Sync(nodes []string) (err error) {
 	klog.V(2).Infof("Syncing nodes %v", nodes)
@@ -325,12 +329,14 @@ func (i *Instances) Sync(nodes []string) (err error) {
 		}
 	}()
 
+	// czawadka TODO - PUT LIMIT FOR 1000 NODES?? to limit churn with code in gce_load_balancer_intrnal
 	pool, err := i.List()
 	if err != nil {
 		klog.Errorf("List error: %v", err)
 		return err
 	}
 
+	//czawadka -a actual sync
 	for _, igName := range pool {
 		gceNodes := sets.NewString()
 		gceNodes, err = i.list(igName)
@@ -339,6 +345,13 @@ func (i *Instances) Sync(nodes []string) (err error) {
 			return err
 		}
 		kubeNodes := sets.NewString(nodes...)
+		// TODO czawadka:respect limit of 1000 nodes in the IG.
+		// As 'maxInstancesPerInstanceGroup' in  k/kstaging/src/k8s.io/legacy-cloud-providers/gce/gce_loadbalancer_internal.go
+		// 	if len(kubeNodes) > maxInstancesPerInstanceGroup {
+		//		klog.Warningf("Limiting number of VMs for InstanceGroup %s to %d", name, maxInstancesPerInstanceGroup)
+		//		kubeNodes = sets.NewString(kubeNodes.List()[:maxInstancesPerInstanceGroup]...)
+		//	}
+
 
 		// A node deleted via kubernetes could still exist as a gce vm. We don't
 		// want to route requests to it. Similarly, a node added to kubernetes
@@ -360,6 +373,7 @@ func (i *Instances) Sync(nodes []string) (err error) {
 
 		start = time.Now()
 		if len(addNodes) != 0 {
+			// TODO czawadka respect limit of 1000 nodes?
 			err = i.Add(igName, addNodes)
 			klog.V(2).Infof("Add(%q, _) = %v (took %s); nodes = %v", igName, err, time.Now().Sub(start), addNodes)
 			if err != nil {

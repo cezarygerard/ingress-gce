@@ -171,6 +171,7 @@ func (l4c *L4Controller) shutdown() {
 // This check prevents processing of v1-implemented services whose finalizer field got wiped out.
 func (l4c *L4Controller) shouldProcessService(service *v1.Service, l4 *loadbalancers.L4) bool {
 	// skip services that are being handled by the legacy service controller.
+	// CZAWADKA - feature flags and finalizers
 	if utils.IsLegacyL4ILBService(service) {
 		klog.Warningf("Ignoring update for service %s:%s managed by service controller", service.Namespace, service.Name)
 		return false

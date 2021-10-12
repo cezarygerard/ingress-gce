@@ -197,6 +197,7 @@ func (fwc *FirewallController) sync(key string) error {
 	}
 	additionalPorts = append(additionalPorts, negPorts...)
 
+	// CZAWADKA FIREWALL??
 	// Ensure firewall rule for the cluster and pass any NEG endpoint ports.
 	if err := fwc.firewallPool.Sync(nodeNames, additionalPorts, additionalRanges, needNodePort); err != nil {
 		if fwErr, ok := err.(*FirewallXPNError); ok {

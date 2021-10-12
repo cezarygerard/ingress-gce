@@ -90,6 +90,7 @@ func NewInstanceInternalGroupLinker(instancePool instances.NodePool, backendPool
 	}
 }
 
+// CZAWADKA link instance group to the backend
 // Link implements Link.
 func (l *instanceGroupLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 	var igLinks []string
@@ -104,6 +105,7 @@ func (l *instanceGroupLinker) Link(sp utils.ServicePort, groups []GroupKey) erro
 	// ig_linker only supports L7 HTTP(s) External Load Balancer
 	// Hardcoded here since IGs are not supported for non GA-Global right now
 	// TODO(shance): find a way to remove hardcoded values
+	// CZAWADKA - make it work with L4
 	be, err := l.backendPool.Get(sp.BackendName(), meta.VersionGA, meta.Global)
 	if err != nil {
 		return err
@@ -137,6 +139,7 @@ func (l *instanceGroupLinker) Link(sp utils.ServicePort, groups []GroupKey) erro
 	for _, bm := range []BalancingMode{Rate, Utilization} {
 		// Generate backends with given instance groups with a specific mode
 		newBackends := backendsForIGs(addIGs, bm, &sp)
+		//Czawadka: Link backends to backendservice
 		be.Backends = append(originalIGBackends, newBackends...)
 
 		if err := l.backendPool.Update(be); err != nil {
@@ -158,6 +161,7 @@ func (l *instanceGroupLinker) Link(sp utils.ServicePort, groups []GroupKey) erro
 	return fmt.Errorf("received errors when updating backend service: %v", strings.Join(errs, "\n"))
 }
 
+// Czawadka: backends are creted
 func backendsForIGs(igLinks []string, bm BalancingMode, sp *utils.ServicePort) []*composite.Backend {
 	var backends []*composite.Backend
 
@@ -180,6 +184,7 @@ func backendsForIGs(igLinks []string, bm BalancingMode, sp *utils.ServicePort) [
 	return backends
 }
 
+// Czaadka getInstanceGroupsToAdd
 func getInstanceGroupsToAdd(be *composite.BackendService, igLinks []string) ([]string, error) {
 	existingIGs := sets.String{}
 	for _, existingBe := range be.Backends {

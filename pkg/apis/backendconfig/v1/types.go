@@ -123,6 +123,7 @@ type SecurityPolicyConfig struct {
 // ConnectionDrainingConfig contains configuration for connection draining.
 // For now the draining timeout. May manage more settings in the future.
 // +k8s:openapi-gen=true
+// czawadka connection draining
 type ConnectionDrainingConfig struct {
 	// Draining timeout in seconds.
 	DrainingTimeoutSec int64 `json:"drainingTimeoutSec,omitempty"`
@@ -130,6 +131,7 @@ type ConnectionDrainingConfig struct {
 
 // SessionAffinityConfig contains configuration for stickyness parameters.
 // +k8s:openapi-gen=true
+// czawadka connection draining
 type SessionAffinityConfig struct {
 	AffinityType         string `json:"affinityType,omitempty"`
 	AffinityCookieTtlSec *int64 `json:"affinityCookieTtlSec,omitempty"`

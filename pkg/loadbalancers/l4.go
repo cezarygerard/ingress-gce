@@ -200,6 +200,7 @@ func (l *L4) getFRNameWithProtocol(protocol string) string {
 	return l.namer.L4ForwardingRule(l.Service.Namespace, l.Service.Name, strings.ToLower(protocol))
 }
 
+// czawadka internal LB EnsureInternalLoadBalancer
 // EnsureInternalLoadBalancer ensures that all GCE resources for the given loadbalancer service have
 // been created. It returns a LoadBalancerStatus with the updated ForwardingRule IP address.
 func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service) *SyncResult {
@@ -315,6 +316,7 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service)
 	result.Annotations[annotations.BackendServiceKey] = name
 	// create fr rule
 	frName := l.GetFRName()
+	// czawadka forwarding rule:
 	fr, err := l.ensureForwardingRule(frName, bs.SelfLink, options, existingFR)
 	if err != nil {
 		klog.Errorf("EnsureInternalLoadBalancer: Failed to create forwarding rule - %v", err)
