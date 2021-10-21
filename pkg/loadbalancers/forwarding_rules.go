@@ -18,6 +18,7 @@ package loadbalancers
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -336,7 +337,8 @@ func (l4netlb *L4NetLB) ensureExternalForwardingRule(bsLink string, existingFwdR
 	ipToUse := ilbIPToUse(l4netlb.Service, existingFwdRule, "")
 	klog.V(2).Infof("ensureExternalForwardingRule(%v): LoadBalancer IP %s", loadBalancerName, ipToUse)
 
-	_, portRange, _, protocol := utils.GetPortsAndProtocol(l4netlb.Service.Spec.Ports)
+	ports, _, _, protocol := utils.GetPortsAndProtocol(l4netlb.Service.Spec.Ports)
+	portRange := strings.Join(ports, ",")
 
 	serviceKey := utils.ServiceKeyFunc(l4netlb.Service.Namespace, l4netlb.Service.Name)
 	frDesc, err := utils.MakeL4ILBServiceDescription(serviceKey, ipToUse, version, false)
@@ -349,7 +351,7 @@ func (l4netlb *L4NetLB) ensureExternalForwardingRule(bsLink string, existingFwdR
 		Description:         frDesc,
 		IPAddress:           ipToUse,
 		IPProtocol:          string(protocol),
-		PortRange:           portRange[0],
+		PortRange:           portRange,
 		LoadBalancingScheme: string(cloud.SchemeExternal),
 		BackendService:      bsLink,
 	}

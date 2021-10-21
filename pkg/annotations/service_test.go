@@ -18,6 +18,7 @@ package annotations
 
 import (
 	"fmt"
+	"k8s.io/legacy-cloud-providers/gce"
 	"reflect"
 	"testing"
 
@@ -625,6 +626,55 @@ func TestOnlyStatusAnnotationsChanged(t *testing.T) {
 			result := OnlyStatusAnnotationsChanged(tc.service1, tc.service2)
 			if result != tc.expectedResult {
 				t.Errorf("%s: Expected result for input %v, %v to be %v, got %v instead", tc.desc, tc.service1.Annotations, tc.service2.Annotations, tc.expectedResult, result)
+			}
+		})
+	}
+}
+
+func TestWantsL4NetLb(t *testing.T) {
+	tests := []struct {
+		desc             string
+		service          *v1.Service
+		expectedResult   bool
+		expectedTypeDesc string
+	}{
+		{
+			desc:             "nil service",
+			expectedResult:   false,
+			expectedTypeDesc: "",
+		},
+		{
+			desc: "LoadBalancer service",
+			service: &v1.Service{
+				Spec: v1.ServiceSpec{
+					Type: v1.ServiceTypeLoadBalancer,
+				},
+			},
+			expectedResult:   true,
+			expectedTypeDesc: "Type : LoadBalancer, Annotation : \"\"",
+		},
+		{
+			desc: "Internal LoadBalancer service",
+			service: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						gce.ServiceAnnotationLoadBalancerType: "Internal",
+					},
+				},
+
+				Spec: v1.ServiceSpec{
+					Type: v1.ServiceTypeLoadBalancer,
+				},
+			},
+			expectedResult:   false,
+			expectedTypeDesc: "Type : LoadBalancer, Annotation : \"Internal\"",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.desc, func(t *testing.T) {
+			result, typeDesc := WantsL4NetLB(tc.service)
+			if result != tc.expectedResult || typeDesc != tc.expectedTypeDesc {
+				t.Errorf("WantsL4NetLb(), got: %v, %q, want: %v, %q", result, typeDesc, tc.expectedResult, tc.expectedTypeDesc)
 			}
 		})
 	}

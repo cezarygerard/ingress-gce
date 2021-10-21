@@ -78,8 +78,10 @@ func NewL4NetLB(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, n
 		backendPool:         backends.NewPool(cloud, namer),
 	}
 	portId := utils.ServicePortID{Service: l4netlb.NamespacedName}
-	l4netlb.ServicePort = utils.ServicePort{ID: portId,
+	l4netlb.ServicePort = utils.ServicePort{
+		ID:           portId,
 		BackendNamer: l4netlb.namer,
+		NodePort:     int64(service.Spec.Ports[0].NodePort),
 	}
 	return l4netlb
 }
@@ -156,7 +158,7 @@ func (l4netlb *L4NetLB) getFRNameWithProtocol(protocol string) string {
 
 func (l4netlb *L4NetLB) createHealthCheck() (string, string, int32, error) {
 	// TODO(52752) set shared based on service params
-	sharedHC := true
+	sharedHC := !helpers.RequestsOnlyLocalTraffic(l4netlb.Service)
 	hcName, hcFwName := l4netlb.namer.L4HealthCheck(l4netlb.Service.Namespace, l4netlb.Service.Name, sharedHC)
 	hcPath, hcPort := gce.GetNodesHealthCheckPath(), gce.GetNodesHealthCheckPort()
 	if !sharedHC {
