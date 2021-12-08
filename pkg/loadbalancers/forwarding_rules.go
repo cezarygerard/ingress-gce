@@ -226,7 +226,7 @@ func (l *L4) ensureForwardingRule(loadBalancerName, bsLink string, options gce.I
 	// If the network is not a legacy network, use the address manager
 	if !l.cloud.IsLegacyNetwork() {
 		nm := types.NamespacedName{Namespace: l.Service.Namespace, Name: l.Service.Name}.String()
-		addrMgr = newAddressManager(l.cloud, nm, l.cloud.Region(), subnetworkURL, loadBalancerName, ipToUse, cloud.SchemeInternal)
+		addrMgr = newAddressManager(l.cloud, nm, l.cloud.Region(), subnetworkURL, loadBalancerName, ipToUse, cloud.SchemeInternal, cloud.NetworkTierPremium)
 		ipToUse, err = addrMgr.HoldAddress()
 		if err != nil {
 			return nil, err
@@ -337,11 +337,20 @@ func (l4netlb *L4NetLB) ensureExternalForwardingRule(bsLink string, existingFwdR
 	ipToUse := l4lbIPToUse(l4netlb.Service, existingFwdRule, "")
 	klog.V(2).Infof("ensureExternalForwardingRule(%v): LoadBalancer IP %s", loadBalancerName, ipToUse)
 
+	// If network tier annotation in Service Spec is present
+	// check if it match network tiers form forwarding rule and external ip Address.
+	// If they do not match, tear down the existing resources with the wrong tier.
+	netTier, isFromSvc := utils.GetNetworkTier(l4netlb.Service)
+	if isFromSvc {
+		if err := l4netlb.tearDownResourcesWithWrongNetworkTier(existingFwdRule, ipToUse, netTier); err != nil {
+			return nil, err
+		}
+	}
 	var addrMgr *addressManager
 	// If the network is not a legacy network, use the address manager
 	if !l4netlb.cloud.IsLegacyNetwork() {
 		nm := types.NamespacedName{Namespace: l4netlb.Service.Namespace, Name: l4netlb.Service.Name}.String()
-		addrMgr = newAddressManager(l4netlb.cloud, nm, l4netlb.cloud.Region(), "", loadBalancerName, ipToUse, cloud.SchemeExternal)
+		addrMgr = newAddressManager(l4netlb.cloud, nm, l4netlb.cloud.Region(), "", loadBalancerName, ipToUse, cloud.SchemeExternal, netTier)
 		ipToUse, err = addrMgr.HoldAddress()
 		if err != nil {
 			return nil, err
@@ -372,6 +381,7 @@ func (l4netlb *L4NetLB) ensureExternalForwardingRule(bsLink string, existingFwdR
 		PortRange:           portRange,
 		LoadBalancingScheme: string(cloud.SchemeExternal),
 		BackendService:      bsLink,
+		NetworkTier:         netTier.ToGCEValue(),
 	}
 
 	if existingFwdRule != nil {
@@ -398,6 +408,26 @@ func (l4netlb *L4NetLB) ensureExternalForwardingRule(bsLink string, existingFwdR
 		return nil, err
 	}
 	return composite.GetForwardingRule(l4netlb.cloud, key, fr.Version)
+}
+
+func (l4netlb *L4NetLB) tearDownResourcesWithWrongNetworkTier(existingFwdRule *composite.ForwardingRule, ipToUse string, svcNetTier cloud.NetworkTier) error {
+	if existingFwdRule != nil && existingFwdRule.NetworkTier != svcNetTier.ToGCEValue() {
+		l4netlb.deleteForwardingRule(existingFwdRule.Name, meta.VersionGA)
+	}
+	if ipToUse != "" {
+		addr, err := l4netlb.cloud.GetRegionAddressByIP(l4netlb.cloud.Region(), ipToUse)
+		if err == nil && addr != nil && addr.NetworkTier != svcNetTier.ToGCEValue() {
+			if ipToUse == l4netlb.Service.Spec.LoadBalancerIP {
+				//This is user owned address we cannot remove this
+				return fmt.Errorf("User specific address IP (%v) network tier mismatch %v != %v ", ipToUse, addr.NetworkTier, svcNetTier)
+			}
+			klog.V(3).Infof("Deleting IP address %v because has wrong network tier", ipToUse)
+			l4netlb.cloud.DeleteRegionAddress(addr.Name, l4netlb.cloud.Region())
+		} else if !utils.IsNotFoundError(err) {
+			return err
+		}
+	}
+	return nil
 }
 
 func (l4netlb *L4NetLB) GetForwardingRule(name string, version meta.Version) *composite.ForwardingRule {

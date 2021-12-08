@@ -18,9 +18,10 @@ package loadbalancers
 
 import (
 	"fmt"
+	"net/http"
+
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/legacy-cloud-providers/gce"
-	"net/http"
 
 	compute "google.golang.org/api/compute/v1"
 
@@ -39,9 +40,10 @@ type addressManager struct {
 	region      string
 	subnetURL   string
 	tryRelease  bool
+	networkTier cloud.NetworkTier
 }
 
-func newAddressManager(svc gce.CloudAddressService, serviceName, region, subnetURL, name, targetIP string, addressType cloud.LbScheme) *addressManager {
+func newAddressManager(svc gce.CloudAddressService, serviceName, region, subnetURL, name, targetIP string, addressType cloud.LbScheme, networkTier cloud.NetworkTier) *addressManager {
 	return &addressManager{
 		svc:         svc,
 		logPrefix:   fmt.Sprintf("AddressManager(%q)", name),
@@ -52,6 +54,7 @@ func newAddressManager(svc gce.CloudAddressService, serviceName, region, subnetU
 		addressType: addressType,
 		tryRelease:  true,
 		subnetURL:   subnetURL,
+		networkTier: networkTier,
 	}
 }
 
@@ -128,6 +131,7 @@ func (am *addressManager) ensureAddressReservation() (string, error) {
 		Address:     am.targetIP,
 		AddressType: string(am.addressType),
 		Subnetwork:  am.subnetURL,
+		NetworkTier: am.networkTier.ToGCEValue(),
 	}
 
 	reserveErr := am.svc.ReserveRegionAddress(newAddr, am.region)
@@ -192,7 +196,9 @@ func (am *addressManager) validateAddress(addr *compute.Address) error {
 	if addr.AddressType != string(am.addressType) {
 		return fmt.Errorf("address %q does not have the expected address type %q, actual: %q", addr.Name, am.addressType, addr.AddressType)
 	}
-
+	if addr.NetworkTier != am.networkTier.ToGCEValue() {
+		return fmt.Errorf("address %q does not have the expected network tier %q, actual: %q", addr.Name, am.networkTier.ToGCEValue(), addr.NetworkTier)
+	}
 	return nil
 }
 

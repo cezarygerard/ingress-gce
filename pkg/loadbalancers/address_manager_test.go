@@ -17,9 +17,10 @@ limitations under the License.
 package loadbalancers
 
 import (
+	"testing"
+
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
 	"k8s.io/ingress-gce/pkg/utils"
-	"testing"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/stretchr/testify/assert"
@@ -40,7 +41,7 @@ func TestAddressManagerNoRequestedIP(t *testing.T) {
 	require.NoError(t, err)
 	targetIP := ""
 
-	mgr := newAddressManager(svc, testSvcName, vals.Region, testSubnet, testLBName, targetIP, cloud.SchemeInternal)
+	mgr := newAddressManager(svc, testSvcName, vals.Region, testSubnet, testLBName, targetIP, cloud.SchemeInternal, cloud.NetworkTierPremium)
 	testHoldAddress(t, mgr, svc, testLBName, vals.Region, targetIP, string(cloud.SchemeInternal))
 	testReleaseAddress(t, mgr, svc, testLBName, vals.Region)
 }
@@ -51,7 +52,7 @@ func TestAddressManagerBasic(t *testing.T) {
 	require.NoError(t, err)
 	targetIP := "1.1.1.1"
 
-	mgr := newAddressManager(svc, testSvcName, vals.Region, testSubnet, testLBName, targetIP, cloud.SchemeInternal)
+	mgr := newAddressManager(svc, testSvcName, vals.Region, testSubnet, testLBName, targetIP, cloud.SchemeInternal, cloud.NetworkTierPremium)
 	testHoldAddress(t, mgr, svc, testLBName, vals.Region, targetIP, string(cloud.SchemeInternal))
 	testReleaseAddress(t, mgr, svc, testLBName, vals.Region)
 }
@@ -67,7 +68,7 @@ func TestAddressManagerOrphaned(t *testing.T) {
 	err = svc.ReserveRegionAddress(addr, vals.Region)
 	require.NoError(t, err)
 
-	mgr := newAddressManager(svc, testSvcName, vals.Region, testSubnet, testLBName, targetIP, cloud.SchemeInternal)
+	mgr := newAddressManager(svc, testSvcName, vals.Region, testSubnet, testLBName, targetIP, cloud.SchemeInternal, cloud.NetworkTierPremium)
 	testHoldAddress(t, mgr, svc, testLBName, vals.Region, targetIP, string(cloud.SchemeInternal))
 	testReleaseAddress(t, mgr, svc, testLBName, vals.Region)
 }
@@ -84,7 +85,7 @@ func TestAddressManagerOutdatedOrphan(t *testing.T) {
 	err = svc.ReserveRegionAddress(addr, vals.Region)
 	require.NoError(t, err)
 
-	mgr := newAddressManager(svc, testSvcName, vals.Region, testSubnet, testLBName, targetIP, cloud.SchemeInternal)
+	mgr := newAddressManager(svc, testSvcName, vals.Region, testSubnet, testLBName, targetIP, cloud.SchemeInternal, cloud.NetworkTierPremium)
 	testHoldAddress(t, mgr, svc, testLBName, vals.Region, targetIP, string(cloud.SchemeInternal))
 	testReleaseAddress(t, mgr, svc, testLBName, vals.Region)
 }
@@ -100,7 +101,7 @@ func TestAddressManagerExternallyOwned(t *testing.T) {
 	err = svc.ReserveRegionAddress(addr, vals.Region)
 	require.NoError(t, err)
 
-	mgr := newAddressManager(svc, testSvcName, vals.Region, testSubnet, testLBName, targetIP, cloud.SchemeInternal)
+	mgr := newAddressManager(svc, testSvcName, vals.Region, testSubnet, testLBName, targetIP, cloud.SchemeInternal, cloud.NetworkTierPremium)
 	ipToUse, err := mgr.HoldAddress()
 	require.NoError(t, err)
 	assert.NotEmpty(t, ipToUse)
@@ -123,7 +124,7 @@ func TestAddressManagerBadExternallyOwned(t *testing.T) {
 	err = svc.ReserveRegionAddress(addr, vals.Region)
 	require.NoError(t, err)
 
-	mgr := newAddressManager(svc, testSvcName, vals.Region, testSubnet, testLBName, targetIP, cloud.SchemeInternal)
+	mgr := newAddressManager(svc, testSvcName, vals.Region, testSubnet, testLBName, targetIP, cloud.SchemeInternal, cloud.NetworkTierPremium)
 	ad, err := mgr.HoldAddress()
 	assert.NotNil(t, err) // FIXME
 	require.Equal(t, ad, "")

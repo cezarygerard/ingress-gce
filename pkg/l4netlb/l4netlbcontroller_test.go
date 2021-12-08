@@ -368,7 +368,7 @@ func TestProcessServiceCreateWithUsersProvidedIP(t *testing.T) {
 	if err := lc.sync(key); err == nil {
 		t.Errorf("Expected sync error when address reservation fails.")
 	}
-	addUsersStaticAddress(lc)
+	addUsersStaticAddress(lc, cloud.NetworkTierDefault)
 	if err := lc.sync(key); err != nil {
 		t.Errorf("Un expected Error when trying to sync service with user's address, err: %v", err)
 	}
@@ -398,7 +398,7 @@ func TestProcessServiceCreateWithUsersProvidedIP(t *testing.T) {
 	deleteNetLBService(lc, svc)
 }
 
-func addUsersStaticAddress(lc *L4NetLBController) {
+func addUsersStaticAddress(lc *L4NetLBController, netTier cloud.NetworkTier) {
 	lc.ctx.Cloud.Compute().(*cloud.MockGCE).MockAddresses.InsertHook = mock.InsertAddressHook
 	lc.ctx.Cloud.Compute().(*cloud.MockGCE).MockAlphaAddresses.X = mock.AddressAttributes{}
 	lc.ctx.Cloud.Compute().(*cloud.MockGCE).MockAddresses.X = mock.AddressAttributes{}
@@ -407,6 +407,7 @@ func addUsersStaticAddress(lc *L4NetLBController) {
 		Description: fmt.Sprintf(`{"kubernetes.io/service-name":"%s"}`, userAddrName),
 		Address:     usersIP,
 		AddressType: string(cloud.SchemeExternal),
+		NetworkTier: netTier.ToGCEValue(),
 	}
 	lc.ctx.Cloud.ReserveRegionAddress(newAddr, lc.ctx.Cloud.Region())
 }
@@ -740,5 +741,29 @@ func TestControllerShouldNotProcessServicesWithLegacyFwR(t *testing.T) {
 	}
 	if l4netController.shouldProcessService(svc, newSvc) {
 		t.Errorf("Service should not be marked for update")
+	}
+}
+
+func TestControllerUserIPWithStandardNetworkTier(t *testing.T) {
+	// Network Tier from User Static Address should match network tier from forwarding rule.
+	// Premium Network Tier is default for creating forwarding rule so if User wants to use Standard Network Tier for Static Address
+	// should include network tier annotation in Service.
+
+	lc := newL4NetLBServiceController()
+
+	svc := test.NewL4NetLBService(8080, defaultNodePort)
+	svc.Spec.LoadBalancerIP = usersIP
+	addNetLBService(lc, svc)
+	key, _ := common.KeyFunc(svc)
+	addUsersStaticAddress(lc, cloud.NetworkTierStandard)
+	// Simulate block address reservation because address is owned by User.
+	lc.ctx.Cloud.Compute().(*cloud.MockGCE).MockAddresses.InsertHook = test.InsertAddressErrorHook
+	if err := lc.sync(key); err == nil {
+		t.Errorf("Expected error when trying to ensure service with wrong Network Tier, err: %v", err)
+	}
+	svc.Annotations[annotations.NetworkTierAnnotationKey] = string(cloud.NetworkTierStandard)
+	updateNetLBService(lc, svc)
+	if err := lc.sync(key); err != nil {
+		t.Errorf("Unexpected error when trying to ensure service with STANDARD Network Tier, err: %v", err)
 	}
 }

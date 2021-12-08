@@ -97,8 +97,9 @@ func NewL4ILBService(onlyLocal bool, port int) *api_v1.Service {
 func NewL4NetLBService(port int, nodePort int32) *api_v1.Service {
 	svc := &api_v1.Service{
 		ObjectMeta: meta_v1.ObjectMeta{
-			Name:      netLbServiceName,
-			Namespace: testServiceNamespace,
+			Name:        netLbServiceName,
+			Namespace:   testServiceNamespace,
+			Annotations: make(map[string]string),
 		},
 		Spec: api_v1.ServiceSpec{
 			Type:            api_v1.ServiceTypeLoadBalancer,
