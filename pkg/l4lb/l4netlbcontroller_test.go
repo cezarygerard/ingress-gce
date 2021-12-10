@@ -114,7 +114,7 @@ func checkForwardingRule(lc *L4NetLBController, svc *v1.Service, expectedPortRan
 
 func createAndSyncNetLBSvc(t *testing.T) (svc *v1.Service, lc *L4NetLBController) {
 	lc = newL4NetLBServiceController()
-	svc = test.NewL4NetLBService(8080)
+	svc = test.NewL4NetLBRbsService(8080)
 	addNetLBService(lc, svc)
 	key, _ := common.KeyFunc(svc)
 	err := lc.sync(key)
@@ -126,6 +126,17 @@ func createAndSyncNetLBSvc(t *testing.T) (svc *v1.Service, lc *L4NetLBController
 		t.Errorf("Failed to lookup service %s, err %v", svc.Name, err)
 	}
 	validateNetLBSvcStatus(svc, t)
+	return
+}
+
+func createAndSyncLegacyNetLBSvc(t *testing.T) (svc *v1.Service, lc *L4NetLBController) {
+	lc = newL4NetLBServiceController()
+	svc = test.NewL4LegacyNetLBService(8080, 30234)
+	addNetLBService(lc, svc)
+	svc, err := lc.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Errorf("Failed to lookup service %s, err %v", svc.Name, err)
+	}
 	return
 }
 
@@ -250,7 +261,7 @@ func TestProcessMultipleNetLBServices(t *testing.T) {
 			go lc.Run()
 			var svcNames []string
 			for port := 8000; port < 8020; port++ {
-				newSvc := test.NewL4NetLBService(port)
+				newSvc := test.NewL4NetLBRbsService(port)
 				newSvc.Name = newSvc.Name + fmt.Sprintf("-%d", port)
 				newSvc.UID = types.UID(newSvc.Name)
 				svcNames = append(svcNames, newSvc.Name)
@@ -320,7 +331,7 @@ func TestForwardingRuleWithPortRange(t *testing.T) {
 			expectedPortRange: "80-8081",
 		},
 	} {
-		svc := test.NewL4NetLBServiceMultiplePorts(tc.svcName, tc.ports)
+		svc := test.NewL4NetLBRbsServiceMultiplePorts(tc.svcName, tc.ports)
 		svc.UID = types.UID(svc.Name + fmt.Sprintf("-%d", rand.Intn(1001)))
 		addNetLBService(lc, svc)
 		key, _ := common.KeyFunc(svc)
@@ -361,7 +372,7 @@ func TestProcessServiceCreateWithUsersProvidedIP(t *testing.T) {
 	lc := newL4NetLBServiceController()
 
 	lc.ctx.Cloud.Compute().(*cloud.MockGCE).MockAddresses.InsertHook = test.InsertAddressErrorHook
-	svc := test.NewL4NetLBService(8080)
+	svc := test.NewL4NetLBRbsService(8080)
 	svc.Spec.LoadBalancerIP = usersIP
 	addNetLBService(lc, svc)
 	key, _ := common.KeyFunc(svc)
@@ -486,7 +497,7 @@ func TestProcessServiceCreationFailed(t *testing.T) {
 	} {
 		lc := newL4NetLBServiceController()
 		param.addMockFunc((lc.ctx.Cloud.Compute().(*cloud.MockGCE)))
-		svc := test.NewL4NetLBService(8080)
+		svc := test.NewL4NetLBRbsService(8080)
 		addNetLBService(lc, svc)
 		key, _ := common.KeyFunc(svc)
 		err := lc.sync(key)
@@ -737,8 +748,8 @@ func updateAndAssertExternalTrafficPolicy(newSvc *v1.Service, lc *L4NetLBControl
 	return nil
 }
 
-func TestControllerShouldNotProcessServicesWithLegacyFwR(t *testing.T) {
-	svc, l4netController := createAndSyncNetLBSvc(t)
+func TestControllerShouldNotProcessServicesWithoutRbsEnabled(t *testing.T) {
+	svc, l4netController := createAndSyncLegacyNetLBSvc(t)
 	// Add Forwarding Rule pointing to Target
 	l4netController.ctx.Cloud.Compute().(*cloud.MockGCE).MockForwardingRules.GetHook = test.GetLegacyForwardingRule
 
@@ -746,10 +757,8 @@ func TestControllerShouldNotProcessServicesWithLegacyFwR(t *testing.T) {
 	if err != nil {
 		t.Errorf("Failed to lookup service %s, err: %v", svc.Name, err)
 	}
-	newSvc.Spec.ExternalTrafficPolicy = v1.ServiceExternalTrafficPolicyTypeLocal
-	updateNetLBService(l4netController, svc)
-	if !l4netController.hasLegacyForwardingRule(newSvc) {
-		t.Errorf("Service should detect legacy forwarding rule")
+	if l4netController.isRbsBasedService(newSvc) {
+		t.Errorf("Service should detect that service has Rbs disabled")
 	}
 	if l4netController.shouldProcessService(svc, newSvc) {
 		t.Errorf("Service should not be marked for update")
@@ -766,7 +775,7 @@ func TestControllerUserIPWithStandardNetworkTier(t *testing.T) {
 
 	lc := newL4NetLBServiceController()
 
-	svc := test.NewL4NetLBService(8080)
+	svc := test.NewL4NetLBRbsService(8080)
 	svc.Spec.LoadBalancerIP = usersIP
 	addNetLBService(lc, svc)
 	key, _ := common.KeyFunc(svc)
