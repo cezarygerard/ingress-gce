@@ -100,6 +100,9 @@ const (
 	HealthcheckResource            = "healthcheck"
 	FirewallForHealthcheckResource = "firewall-rule-for-hc"
 	AddressResource                = "address"
+	// TODO(slavik): import this from gce_annotations when it will be merged in k8s
+	RBSAnnotationKey = "cloud.google.com/l4-rbs"
+	RBSEnabled       = "enabled"
 )
 
 // NegAnnotation is the format of the annotation associated with the

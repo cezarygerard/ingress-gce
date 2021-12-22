@@ -760,7 +760,7 @@ func TestControllerShouldNotProcessServicesWithoutRbsEnabled(t *testing.T) {
 	if l4netController.isRbsBasedService(newSvc) {
 		t.Errorf("Service should detect that service has Rbs disabled")
 	}
-	if l4netController.shouldProcessService(svc, newSvc) {
+	if l4netController.shouldProcessService(newSvc, svc) {
 		t.Errorf("Service should not be marked for update")
 	}
 }
@@ -788,5 +788,48 @@ func TestControllerUserIPWithStandardNetworkTier(t *testing.T) {
 	updateNetLBService(lc, svc)
 	if err := lc.sync(key); err != nil {
 		t.Errorf("Unexpected error when trying to ensure service with STANDARD Network Tier, err: %v", err)
+	}
+}
+
+func TestControllerShouldProcessServicesWithAnnotation(t *testing.T) {
+	svc, l4netController := createAndSyncLegacyNetLBSvc(t)
+
+	newSvc, err := l4netController.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
+	newSvc.Annotations = map[string]string{annotations.RBSAnnotationKey: annotations.RBSEnabled}
+	if err != nil {
+		t.Errorf("Failed to lookup service %s, err: %v", svc.Name, err)
+	}
+	if !l4netController.isRbsBasedService(newSvc) {
+		t.Errorf("Service should detect that service has Rbs enabled")
+	}
+	if !l4netController.shouldProcessService(newSvc, svc) {
+		t.Errorf("Service should be marked for update")
+	}
+}
+
+func TestControllerShouldDetectRbsByFinalizer(t *testing.T) {
+	svc, l4netController := createAndSyncLegacyNetLBSvc(t)
+
+	newSvc, err := l4netController.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Errorf("Failed to lookup service %s, err: %v", svc.Name, err)
+	}
+	newSvc.ObjectMeta.Finalizers = append(newSvc.ObjectMeta.Finalizers, common.NetLBFinalizerV2)
+	if !l4netController.isRbsBasedService(newSvc) {
+		t.Errorf("Service should detect that service has Rbs enabled")
+	}
+}
+
+func TestControllerShouldDetectRbsByForwardingRule(t *testing.T) {
+	svc, l4netController := createAndSyncLegacyNetLBSvc(t)
+
+	l4netController.ctx.Cloud.Compute().(*cloud.MockGCE).MockForwardingRules.GetHook = test.GetRbsForwardingRule
+
+	newSvc, err := l4netController.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Errorf("Failed to lookup service %s, err: %v", svc.Name, err)
+	}
+	if !l4netController.isRbsBasedService(newSvc) {
+		t.Errorf("Service should detect that service has Rbs enabled")
 	}
 }

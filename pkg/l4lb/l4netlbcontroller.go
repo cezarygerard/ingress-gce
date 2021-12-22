@@ -40,12 +40,6 @@ import (
 	"k8s.io/klog"
 )
 
-const (
-	RBSAnnotationKey = "cloud.google.com/l4-rbs"
-	// RBSEnabled is an annotation to indicate the Service is opt-in for RBS
-	RBSEnabled = "enabled"
-)
-
 type L4NetLBController struct {
 	ctx           *context.ControllerContext
 	svcQueue      utils.TaskQueue
@@ -236,7 +230,7 @@ func (lc *L4NetLBController) hasRBSForwardingRule(svc *v1.Service) bool {
 
 // isRbsBasedService checks if service has either Rbs annotation, finalizer or RBSForwardingRule
 func (lc *L4NetLBController) isRbsBasedService(svc *v1.Service) bool {
-	if val, ok := svc.Annotations[RBSAnnotationKey]; ok && val == RBSEnabled {
+	if val, ok := svc.Annotations[annotations.RBSAnnotationKey]; ok && val == annotations.RBSEnabled {
 		return true
 	}
 	if utils.HasL4NetLBFinalizerV2(svc) || lc.hasRBSForwardingRule(svc) {
