@@ -109,7 +109,7 @@ func NewL4LegacyNetLBServiceWithoutPorts() *api_v1.Service {
 	return svc
 }
 
-// NewL4LegacyNetLBService creates a Legacy Service of type LoadBalancer
+// NewL4LegacyNetLBService creates a Legacy Service of type LoadBalancer without the RBS Annotation
 func NewL4LegacyNetLBService(port int, nodePort int32) *api_v1.Service {
 	svc := NewL4LegacyNetLBServiceWithoutPorts()
 	svc.Spec.Ports = []api_v1.ServicePort{

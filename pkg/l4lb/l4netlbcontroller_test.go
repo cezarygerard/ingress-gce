@@ -823,7 +823,7 @@ func TestControllerShouldDetectRbsByFinalizer(t *testing.T) {
 func TestControllerShouldDetectRbsByForwardingRule(t *testing.T) {
 	svc, l4netController := createAndSyncLegacyNetLBSvc(t)
 
-	l4netController.ctx.Cloud.Compute().(*cloud.MockGCE).MockForwardingRules.GetHook = test.GetRbsForwardingRule
+	l4netController.ctx.Cloud.Compute().(*cloud.MockGCE).MockForwardingRules.GetHook = test.GetRBSForwardingRule
 
 	newSvc, err := l4netController.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
 	if err != nil {

@@ -94,7 +94,7 @@ func GetLegacyForwardingRule(ctx context.Context, key *meta.Key, m *cloud.MockFo
 	return true, &fwRule, nil
 }
 
-func GetRbsForwardingRule(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules) (bool, *compute.ForwardingRule, error) {
+func GetRBSForwardingRule(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules) (bool, *compute.ForwardingRule, error) {
 	fwRule := compute.ForwardingRule{BackendService: "some_rbs", LoadBalancingScheme: string(cloud.SchemeExternal)}
 	return true, &fwRule, nil
 }
