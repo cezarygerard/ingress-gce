@@ -148,6 +148,7 @@ func NewControllerContext(
 	clusterNamer *namer.Namer,
 	kubeSystemUID types.UID,
 	config ControllerContextConfig) *ControllerContext {
+
 	context := &ControllerContext{
 		KubeConfig:              kubeConfig,
 		KubeClient:              kubeClient,
@@ -205,13 +206,21 @@ func NewControllerContext(
 		context.UseEndpointSlices,
 		context.KubeClient,
 	)
-	context.InstancePool = instances.NewNodePool(context.Cloud,
-		context.ClusterNamer,
-		context,
-		utils.GetBasePath(context.Cloud),
-		context.Translator,
-	)
-
+	if flags.F.EnableMultipleIgs {
+		context.InstancePool = instances.NewMultiIGNodePool(context.Cloud,
+			context.ClusterNamer,
+			context,
+			utils.GetBasePath(context.Cloud),
+			context.Translator,
+		)
+	} else {
+		context.InstancePool = instances.NewNodePool(context.Cloud,
+			context.ClusterNamer,
+			context,
+			utils.GetBasePath(context.Cloud),
+			context.Translator,
+		)
+	}
 	return context
 }
 

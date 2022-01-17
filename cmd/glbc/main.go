@@ -27,6 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/ingress-gce/pkg/frontendconfig"
 	"k8s.io/ingress-gce/pkg/ingparams"
+	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/l4lb"
 	"k8s.io/ingress-gce/pkg/psc"
 	"k8s.io/ingress-gce/pkg/serviceattachment"
@@ -50,7 +51,6 @@ import (
 	"k8s.io/ingress-gce/pkg/controller"
 	"k8s.io/ingress-gce/pkg/neg"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
-
 	"k8s.io/ingress-gce/cmd/glbc/app"
 	"k8s.io/ingress-gce/pkg/backendconfig"
 	"k8s.io/ingress-gce/pkg/crd"
@@ -350,8 +350,13 @@ func runControllers(ctx *ingctx.ControllerContext) {
 
 	ctx.Start(stopCh)
 
-	nodeController := controller.NewNodeController(ctx, stopCh)
-	go nodeController.Run()
+	if flags.F.EnableMultipleIgs {
+		igController := instances.NewInstancesGroupController(ctx, stopCh)
+		go igController.Run()
+	} else {
+		nodeController := controller.NewNodeController(ctx, stopCh)
+		go nodeController.Run()
+	}
 
 	// The L4NetLbController will be run when RbsMode flag is Set
 	if flags.F.L4elbRbsMode != flags.DISABLED {

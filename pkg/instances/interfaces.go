@@ -34,9 +34,6 @@ type NodePool interface {
 	EnsureInstanceGroupsAndPorts(name string, ports []int64) ([]*compute.InstanceGroup, error)
 	DeleteInstanceGroup(name string) error
 
-	// TODO: Refactor for modularity
-	Add(groupName string, nodeNames []string) error
-	Remove(groupName string, nodeNames []string) error
 	Sync(nodeNames []string) error
 	Get(name, zone string) (*compute.InstanceGroup, error)
 	List() ([]string, error)
