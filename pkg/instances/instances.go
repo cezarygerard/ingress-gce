@@ -113,7 +113,14 @@ func (i *Instances) ensureInstanceGroupAndPorts(name, zone string, ports []int64
 	} else {
 		klog.V(5).Infof("Instance group %v/%v already exists.", zone, name)
 	}
+	err = i.setPorts(ig, zone, ports)
+	if err != nil {
+		return nil, err
+	}
+	return ig, nil
+}
 
+func (i *Instances) setPorts(ig *compute.InstanceGroup, zone string, ports []int64) error {
 	// Build map of existing ports
 	existingPorts := map[int64]bool{}
 	for _, np := range ig.NamedPorts {
@@ -124,7 +131,6 @@ func (i *Instances) ensureInstanceGroupAndPorts(name, zone string, ports []int64
 	var newPorts []int64
 	for _, p := range ports {
 		if existingPorts[p] {
-			klog.V(5).Infof("Instance group %v/%v already has named port %v", zone, ig.Name, p)
 			continue
 		}
 		newPorts = append(newPorts, p)
@@ -137,14 +143,14 @@ func (i *Instances) ensureInstanceGroupAndPorts(name, zone string, ports []int64
 	}
 
 	if len(newNamedPorts) > 0 {
-		klog.V(3).Infof("Instance group %v/%v does not have ports %+v, adding them now.", zone, name, newPorts)
 		if err := i.cloud.SetNamedPortsOfInstanceGroup(ig.Name, zone, append(ig.NamedPorts, newNamedPorts...)); err != nil {
-			return nil, err
+			return err
 		}
 	}
 
-	return ig, nil
+	return nil
 }
+
 
 // DeleteInstanceGroup deletes the given IG by name, from all zones.
 func (i *Instances) DeleteInstanceGroup(name string) error {

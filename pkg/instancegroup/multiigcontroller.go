@@ -14,19 +14,20 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package instances
+package instancegroup
 
 import (
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
 	"time"
 )
 
-type InstancesGroupController struct {
-	pool NodePool
+type MultiIGController struct {
+	pool instances.NodePool
 	// lister is a cache of the k8s Node resources.
 	lister cache.Indexer
 	// queue is the TaskQueue used to manage the node worker updates.
@@ -39,8 +40,8 @@ type InstancesGroupController struct {
 }
 
 // NewNodeController returns a new node update controller.
-func NewInstancesGroupController(ctx *context.ControllerContext, stopCh chan struct{}) *InstancesGroupController {
-	igc := &InstancesGroupController{
+func NewMultiInstancesGroupController(ctx *context.ControllerContext, stopCh chan struct{}) *MultiIGController {
+	igc := &MultiIGController{
 		lister:    ctx.NodeInformer.GetIndexer(),
 		hasSynced: ctx.HasSynced,
 		stopCh:    stopCh,
@@ -48,7 +49,7 @@ func NewInstancesGroupController(ctx *context.ControllerContext, stopCh chan str
 	igc.queue = utils.NewPeriodicTaskQueue("", "nodes", igc.sync)
 
 	// Cast or die
-	pool, ok := ctx.InstancePool.(*MultiIGNodePool)
+	pool, ok := ctx.InstancePool.(*instances.MultiIGNodePool)
 	if !ok {
 		klog.Fatalf("provided InstancePool must be of type MultiIGNodePool")
 	}
@@ -70,7 +71,7 @@ func NewInstancesGroupController(ctx *context.ControllerContext, stopCh chan str
 
 // Run the queue to process updates for the controller. This must be run in a
 // separate goroutine (method will block until queue shutdown).
-func (igc *InstancesGroupController) Run() {
+func (igc *MultiIGController) Run() {
 	start := time.Now()
 	for !igc.hasSynced() {
 		klog.V(2).Infof("Waiting for hasSynced (%s elapsed)", time.Now().Sub(start))
@@ -83,11 +84,11 @@ func (igc *InstancesGroupController) Run() {
 }
 
 // Shutdown shuts down the goroutine that processes node updates.
-func (igc *InstancesGroupController) Shutdown() {
+func (igc *MultiIGController) Shutdown() {
 	igc.queue.Shutdown()
 }
 
-func (igc *InstancesGroupController) sync(key string) error {
+func (igc *MultiIGController) sync(key string) error {
 	_, err := utils.GetReadyNodeNames(listers.NewNodeLister(igc.lister))
 	if err != nil {
 		return err

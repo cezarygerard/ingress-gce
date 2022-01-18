@@ -27,7 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/ingress-gce/pkg/frontendconfig"
 	"k8s.io/ingress-gce/pkg/ingparams"
-	"k8s.io/ingress-gce/pkg/instances"
+	"k8s.io/ingress-gce/pkg/instancegroup"
 	"k8s.io/ingress-gce/pkg/l4lb"
 	"k8s.io/ingress-gce/pkg/psc"
 	"k8s.io/ingress-gce/pkg/serviceattachment"
@@ -351,7 +351,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	ctx.Start(stopCh)
 
 	if flags.F.EnableMultipleIgs {
-		igController := instances.NewInstancesGroupController(ctx, stopCh)
+		igController := instancegroup.NewMultiInstancesGroupController(ctx, stopCh)
 		go igController.Run()
 	} else {
 		nodeController := controller.NewNodeController(ctx, stopCh)

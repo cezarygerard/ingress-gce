@@ -83,33 +83,3 @@ func (igc *MultiIGNodePool) EnsureInstanceGroupsAndPorts(name string, ports []in
 	return igs, nil
 }
 
-func (igc *MultiIGNodePool) setPorts(ig *compute.InstanceGroup, zone string, ports []int64) error {
-	// Build map of existing ports
-	existingPorts := map[int64]bool{}
-	for _, np := range ig.NamedPorts {
-		existingPorts[np.Port] = true
-	}
-
-	// Determine which ports need to be added
-	var newPorts []int64
-	for _, p := range ports {
-		if existingPorts[p] {
-			continue
-		}
-		newPorts = append(newPorts, p)
-	}
-
-	// Build slice of NamedPorts for adding
-	var newNamedPorts []*compute.NamedPort
-	for _, port := range newPorts {
-		newNamedPorts = append(newNamedPorts, &compute.NamedPort{Name: igc.namer.NamedPort(port), Port: port})
-	}
-
-	if len(newNamedPorts) > 0 {
-		if err := igc.cloud.SetNamedPortsOfInstanceGroup(ig.Name, zone, append(ig.NamedPorts, newNamedPorts...)); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
