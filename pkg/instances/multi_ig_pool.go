@@ -18,16 +18,16 @@ package instances
 
 import (
 	compute "google.golang.org/api/compute/v1"
-	"k8s.io/klog"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/klog"
 )
 
 type MultiIGNodePool struct {
 	*Instances
 }
 
-func NewMultiIGNodePool(cloud InstanceGroups, namer namer.BackendNamer, recorders recorderSource, basePath string, zl ZoneLister) NodePool {
+func NewMultiIGNodePool(cloud InstanceGroups, namer namer.BackendNamer, recorders recorderSource, basePath string, zl ZoneLister) *MultiIGNodePool {
 	mignp := &MultiIGNodePool{
 		Instances: &Instances{
 			cloud:              cloud,
@@ -50,14 +50,21 @@ func (igc *MultiIGNodePool) Sync(nodeNames []string) error {
 	return nil
 }
 
-func (igc *MultiIGNodePool) Get(name, zone string) (*compute.InstanceGroup, error) {
-	// TODO (cezarygerard) reimplement. return all IGs from zone, do not use the Instances.Get
-	// TODO (cezarygerard) change signature of the Get func to return a slice
-	return igc.Instances.Get(name, zone)
+func (igc *MultiIGNodePool) Get(name, zone string) ([]*compute.InstanceGroup, error) {
+	var igs []*compute.InstanceGroup
+	igsForZone, err := igc.cloud.ListInstanceGroups(zone)
+	if err != nil {
+		return nil, err
+	}
+	for _, ig := range igsForZone {
+		if igc.namer.NameBelongsToCluster(ig.Name) {
+			igs = append(igs, ig)
+		}
+	}
+	return igs, nil
 }
 
 func (igc *MultiIGNodePool) List() ([]string, error) {
-	// TODO (cezarygerard) reimplement. return all IGs from cluster, do not use the Instances.List
 	return igc.Instances.List()
 }
 
@@ -78,7 +85,7 @@ func (igc *MultiIGNodePool) EnsureInstanceGroupsAndPorts(name string, ports []in
 		if err != nil {
 			return nil, err
 		}
-		igs = append(igs, ig)
+		igs = append(igs, ig...)
 	}
 	return igs, nil
 }

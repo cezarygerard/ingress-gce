@@ -35,7 +35,7 @@ type NodePool interface {
 	DeleteInstanceGroup(name string) error
 
 	Sync(nodeNames []string) error
-	Get(name, zone string) (*compute.InstanceGroup, error)
+	Get(name, zone string) ([]*compute.InstanceGroup, error)
 	List() ([]string, error)
 }
 

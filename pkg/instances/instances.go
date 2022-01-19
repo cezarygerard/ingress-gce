@@ -81,19 +81,19 @@ func (i *Instances) EnsureInstanceGroupsAndPorts(name string, ports []int64) (ig
 			return nil, err
 		}
 
-		igs = append(igs, ig)
+		igs = append(igs, ig...)
 	}
 	return igs, nil
 }
 
-func (i *Instances) ensureInstanceGroupAndPorts(name, zone string, ports []int64) (*compute.InstanceGroup, error) {
-	ig, err := i.Get(name, zone)
+func (i *Instances) ensureInstanceGroupAndPorts(name, zone string, ports []int64) ([]*compute.InstanceGroup, error) {
+	igs, err := i.Get(name, zone)
 	if err != nil && !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 		klog.Errorf("Failed to get instance group %v/%v, err: %v", zone, name, err)
 		return nil, err
 	}
 
-	if ig == nil {
+	if igs == nil {
 		klog.V(3).Infof("Creating instance group %v/%v.", zone, name)
 		if err = i.cloud.CreateInstanceGroup(&compute.InstanceGroup{Name: name}, zone); err != nil {
 			// Error may come back with StatusConflict meaning the instance group was created by another controller
@@ -105,26 +105,29 @@ func (i *Instances) ensureInstanceGroupAndPorts(name, zone string, ports []int64
 				return nil, err
 			}
 		}
-		ig, err = i.cloud.GetInstanceGroup(name, zone)
+		ig, err := i.cloud.GetInstanceGroup(name, zone)
 		if err != nil {
 			klog.Errorf("Failed to get instance group %v/%v after ensuring existence, err: %v", zone, name, err)
 			return nil, err
 		}
+		igs= []*compute.InstanceGroup{ig}
 	} else {
 		klog.V(5).Infof("Instance group %v/%v already exists.", zone, name)
 	}
-	err = i.setPorts(ig, zone, ports)
+	err = i.setPorts(igs, zone, ports)
 	if err != nil {
 		return nil, err
 	}
-	return ig, nil
+	return igs, nil
 }
 
-func (i *Instances) setPorts(ig *compute.InstanceGroup, zone string, ports []int64) error {
+func (i *Instances) setPorts(igs []*compute.InstanceGroup, zone string, ports []int64) error {
 	// Build map of existing ports
 	existingPorts := map[int64]bool{}
-	for _, np := range ig.NamedPorts {
-		existingPorts[np.Port] = true
+	for _, ig := range igs {
+		for _, np := range ig.NamedPorts {
+			existingPorts[np.Port] = true
+		}
 	}
 
 	// Determine which ports need to be added
@@ -143,8 +146,10 @@ func (i *Instances) setPorts(ig *compute.InstanceGroup, zone string, ports []int
 	}
 
 	if len(newNamedPorts) > 0 {
-		if err := i.cloud.SetNamedPortsOfInstanceGroup(ig.Name, zone, append(ig.NamedPorts, newNamedPorts...)); err != nil {
-			return err
+		for _, ig := range igs {
+			if err := i.cloud.SetNamedPortsOfInstanceGroup(ig.Name, zone, append(ig.NamedPorts, newNamedPorts...)); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -204,13 +209,12 @@ func (i *Instances) list(name string) (sets.String, error) {
 }
 
 // Get returns the Instance Group by name.
-func (i *Instances) Get(name, zone string) (*compute.InstanceGroup, error) {
+func (i *Instances) Get(name, zone string) ([]*compute.InstanceGroup, error) {
 	ig, err := i.cloud.GetInstanceGroup(name, zone)
 	if err != nil {
 		return nil, err
 	}
-
-	return ig, nil
+	return []*compute.InstanceGroup{ig}, nil
 }
 
 // List lists the names of all InstanceGroups belonging to this cluster.

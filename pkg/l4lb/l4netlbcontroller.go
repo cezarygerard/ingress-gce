@@ -393,6 +393,10 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service)
 		result.Error = fmt.Errorf("Failed to reset L4 External LoadBalancer status, err: %w", err)
 		return result
 	}
+	if err := lc.deleteIG(svc); err != nil {
+		result.Error = fmt.Errorf("Failed to remove L4 External LoadBalancer Instance Group, err: %w", err)
+		return result
+	}
 	if err := common.EnsureDeleteServiceFinalizer(svc, common.NetLBFinalizerV2, lc.ctx.KubeClient); err != nil {
 		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancerFailed",
 			"Error removing finalizer from L4 External LoadBalancer, err: %v", err)
@@ -401,4 +405,13 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service)
 	}
 	lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletedLoadBalancer", "Deleted L4 External LoadBalancer")
 	return result
+}
+
+func (lc *L4NetLBController) deleteIG(svc *v1.Service) error {
+	if err := lc.instancePool.DeleteInstanceGroup(lc.ctx.ClusterNamer.InstanceGroup()); err != nil && !utils.IsInUsedByError(err)  {
+		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancerFailed",
+			"Error Instance Group, err: %v", err)
+		return err
+	}
+	return nil
 }
