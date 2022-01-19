@@ -46,7 +46,7 @@ func (igc *MultiIGNodePool) DeleteInstanceGroup(name string) error {
 }
 
 func (igc *MultiIGNodePool) Sync(nodeNames []string) error {
-	klog.Infof("Sync is a no-op. Instance groups will be synced in the separate cont roller.")
+	klog.Infof("Sync is a no-op. Instance groups will be synced in the separate controller.")
 	return nil
 }
 
@@ -81,7 +81,7 @@ func (igc *MultiIGNodePool) EnsureInstanceGroupsAndPorts(name string, ports []in
 		if err != nil {
 			return nil, err
 		}
-		err = igc.setPorts(ig, zone, ports)
+		err = igc.setPorts(ig, name, zone, ports)
 		if err != nil {
 			return nil, err
 		}

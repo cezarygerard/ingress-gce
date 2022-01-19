@@ -55,7 +55,7 @@ type recorderSource interface {
 // NewNodePool creates a new node pool.
 // - cloud: implements InstanceGroups, used to sync Kubernetes nodes with
 //   members of the cloud InstanceGroup.
-func NewNodePool(cloud InstanceGroups, namer namer.BackendNamer, recorders recorderSource, basePath string, zl ZoneLister) *Instances {
+func NewNodePool(cloud InstanceGroups, namer namer.BackendNamer, recorders recorderSource, basePath string, zl ZoneLister) NodePool {
 	return &Instances{
 		cloud:              cloud,
 		namer:              namer,
@@ -114,14 +114,14 @@ func (i *Instances) ensureInstanceGroupAndPorts(name, zone string, ports []int64
 	} else {
 		klog.V(5).Infof("Instance group %v/%v already exists.", zone, name)
 	}
-	err = i.setPorts(igs, zone, ports)
+	err = i.setPorts(igs, name, zone, ports)
 	if err != nil {
 		return nil, err
 	}
 	return igs, nil
 }
 
-func (i *Instances) setPorts(igs []*compute.InstanceGroup, zone string, ports []int64) error {
+func (i *Instances) setPorts(igs []*compute.InstanceGroup, name, zone string, ports []int64) error {
 	// Build map of existing ports
 	existingPorts := map[int64]bool{}
 	for _, ig := range igs {
@@ -134,6 +134,7 @@ func (i *Instances) setPorts(igs []*compute.InstanceGroup, zone string, ports []
 	var newPorts []int64
 	for _, p := range ports {
 		if existingPorts[p] {
+			klog.V(5).Infof("Instance group %v/%v already has named port %v", zone, name, p)
 			continue
 		}
 		newPorts = append(newPorts, p)
@@ -146,6 +147,7 @@ func (i *Instances) setPorts(igs []*compute.InstanceGroup, zone string, ports []
 	}
 
 	if len(newNamedPorts) > 0 {
+		klog.V(3).Infof("Instance group %v/%v does not have ports %+v, adding them now.", zone, name, newPorts)
 		for _, ig := range igs {
 			if err := i.cloud.SetNamedPortsOfInstanceGroup(ig.Name, zone, append(ig.NamedPorts, newNamedPorts...)); err != nil {
 				return err

@@ -39,7 +39,7 @@ type MultiIGController struct {
 	stopCh chan struct{}
 }
 
-// NewNodeController returns a new node update controller.
+// NewMultiInstancesGroupController returns a new multi instances group controller.
 func NewMultiInstancesGroupController(ctx *context.ControllerContext, stopCh chan struct{}) *MultiIGController {
 	igc := &MultiIGController{
 		lister:    ctx.NodeInformer.GetIndexer(),
