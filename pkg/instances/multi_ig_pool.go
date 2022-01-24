@@ -30,7 +30,7 @@ type MultiIGNodePool struct {
 func NewMultiIGNodePool(cloud InstanceGroups, namer namer.BackendNamer, recorders recorderSource, basePath string, zl ZoneLister) *MultiIGNodePool {
 	mignp := &MultiIGNodePool{
 		Instances: &Instances{
-			cloud:              cloud,
+			Cloud:              cloud,
 			namer:              namer,
 			recorder:           recorders.Recorder(""), // No namespace
 			instanceLinkFormat: basePath + "zones/%s/instances/%s",
@@ -52,7 +52,7 @@ func (igc *MultiIGNodePool) Sync(nodeNames []string) error {
 
 func (igc *MultiIGNodePool) Get(name, zone string) ([]*compute.InstanceGroup, error) {
 	var igs []*compute.InstanceGroup
-	igsForZone, err := igc.cloud.ListInstanceGroups(zone)
+	igsForZone, err := igc.Cloud.ListInstanceGroups(zone)
 	if err != nil {
 		return nil, err
 	}
@@ -64,10 +64,6 @@ func (igc *MultiIGNodePool) Get(name, zone string) ([]*compute.InstanceGroup, er
 	return igs, nil
 }
 
-func (igc *MultiIGNodePool) List() ([]string, error) {
-	return igc.Instances.List()
-}
-
 func (igc *MultiIGNodePool) EnsureInstanceGroupsAndPorts(name string, ports []int64) (igs []*compute.InstanceGroup, err error) {
 	// Instance groups need to be created only in zones that have ready nodes.
 	zones, err := igc.Instances.ListZones(utils.CandidateNodesPredicate)
@@ -76,7 +72,6 @@ func (igc *MultiIGNodePool) EnsureInstanceGroupsAndPorts(name string, ports []in
 	}
 
 	for _, zone := range zones {
-
 		ig, err := igc.Get(name, zone)
 		if err != nil {
 			return nil, err
@@ -89,4 +84,3 @@ func (igc *MultiIGNodePool) EnsureInstanceGroupsAndPorts(name string, ports []in
 	}
 	return igs, nil
 }
-

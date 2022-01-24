@@ -408,7 +408,7 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service)
 }
 
 func (lc *L4NetLBController) deleteIG(svc *v1.Service) error {
-	if err := lc.instancePool.DeleteInstanceGroup(lc.ctx.ClusterNamer.InstanceGroup()); err != nil && !utils.IsInUsedByError(err)  {
+	if err := lc.instancePool.DeleteInstanceGroup(lc.ctx.ClusterNamer.InstanceGroup()); err != nil && !utils.IsInUsedByError(err) {
 		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancerFailed",
 			"Error Instance Group, err: %v", err)
 		return err
