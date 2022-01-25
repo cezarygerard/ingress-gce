@@ -206,7 +206,7 @@ func NewControllerContext(
 		context.UseEndpointSlices,
 		context.KubeClient,
 	)
-	if flags.F.EnableMultipleIgs {
+	if flags.F.EnableMultipleIGs {
 		context.InstancePool = instances.NewMultiIGInstances(context.Cloud,
 			context.ClusterNamer,
 			context,

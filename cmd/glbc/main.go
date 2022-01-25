@@ -350,7 +350,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 
 	ctx.Start(stopCh)
 
-	if flags.F.EnableMultipleIgs {
+	if flags.F.EnableMultipleIGs {
 		igController := instancegroup.NewMultiInstancesGroupController(ctx, stopCh)
 		go igController.Run()
 	} else {

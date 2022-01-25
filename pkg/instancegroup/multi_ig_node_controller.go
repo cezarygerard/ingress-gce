@@ -26,7 +26,7 @@ import (
 	"time"
 )
 
-type MultiIgNodeController struct {
+type MultiIGNodeController struct {
 	instancePool instances.NodePool
 	// lister is a cache of the k8s Node resources.
 	lister cache.Indexer
@@ -40,8 +40,8 @@ type MultiIgNodeController struct {
 }
 
 // NewMultiInstancesGroupController returns a new multi instances group controller.
-func NewMultiInstancesGroupController(ctx *context.ControllerContext, stopCh chan struct{}) *MultiIgNodeController {
-	igc := &MultiIgNodeController{
+func NewMultiInstancesGroupController(ctx *context.ControllerContext, stopCh chan struct{}) *MultiIGNodeController {
+	igc := &MultiIGNodeController{
 		lister:    ctx.NodeInformer.GetIndexer(),
 		hasSynced: ctx.HasSynced,
 		stopCh:    stopCh,
@@ -71,7 +71,7 @@ func NewMultiInstancesGroupController(ctx *context.ControllerContext, stopCh cha
 
 // Run the queue to process updates for the controller. This must be run in a
 // separate goroutine (method will block until queue shutdown).
-func (igc *MultiIgNodeController) Run() {
+func (igc *MultiIGNodeController) Run() {
 	start := time.Now()
 	for !igc.hasSynced() {
 		klog.V(2).Infof("Waiting for hasSynced (%s elapsed)", time.Now().Sub(start))
@@ -84,11 +84,11 @@ func (igc *MultiIgNodeController) Run() {
 }
 
 // Shutdown shuts down the goroutine that processes node updates.
-func (igc *MultiIgNodeController) Shutdown() {
+func (igc *MultiIGNodeController) Shutdown() {
 	igc.queue.Shutdown()
 }
 
-func (igc *MultiIgNodeController) sync(key string) error {
+func (igc *MultiIGNodeController) sync(key string) error {
 	_, err := utils.GetReadyNodeNames(listers.NewNodeLister(igc.lister))
 	if err != nil {
 		return err
