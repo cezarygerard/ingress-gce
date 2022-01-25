@@ -360,8 +360,9 @@ func (lc *L4NetLBController) ensureInstanceGroups(service *v1.Service, nodeNames
 	// TODO(kl52752) implement limit for 1000 nodes in instance group
 	// TODO(kl52752) Move instance creation and deletion logic to NodeController
 	// to avoid race condition between controllers
-	// TODO(cezarygerard) ignore nodeports in the L4
+	// TODO(cezarygerard) ignore named ports in the L4, they are not needed
 	_, _, nodePorts, _ := utils.GetPortsAndProtocol(service.Spec.Ports)
+	// TODO(cezarygerard) return instance groups from this function to be used for IG Linker
 	_, err := lc.instancePool.EnsureInstanceGroupsAndPorts(lc.ctx.ClusterNamer.InstanceGroup(), nodePorts)
 	if err != nil {
 		return err

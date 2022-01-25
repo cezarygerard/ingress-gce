@@ -68,10 +68,6 @@ func (igc *MultiIGInstances) Get(name, zone string) ([]*compute.InstanceGroup, e
 	return igs, nil
 }
 
-func (igc *MultiIGInstances) List() ([]string, error) {
-	return igc.Instances.List()
-}
-
 func (igc *MultiIGInstances) EnsureInstanceGroupsAndPorts(name string, ports []int64) (igs []*compute.InstanceGroup, err error) {
 	// Instance groups need to be created only in zones that have ready nodes.
 	zones, err := igc.Instances.ListZones(utils.CandidateNodesPredicate)
