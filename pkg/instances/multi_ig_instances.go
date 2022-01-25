@@ -17,18 +17,19 @@ limitations under the License.
 package instances
 
 import (
+	"fmt"
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 )
 
-type MultiIGNodePool struct {
+type MultiIGInstances struct {
 	*Instances
 }
 
-func NewMultiIGNodePool(cloud InstanceGroups, namer namer.BackendNamer, recorders recorderSource, basePath string, zl ZoneLister) *MultiIGNodePool {
-	mignp := &MultiIGNodePool{
+func NewMultiIGInstances(cloud InstanceGroups, namer namer.BackendNamer, recorders recorderSource, basePath string, zl ZoneLister) *MultiIGInstances {
+	multiIGInstances := &MultiIGInstances{
 		Instances: &Instances{
 			cloud:              cloud,
 			namer:              namer,
@@ -37,20 +38,20 @@ func NewMultiIGNodePool(cloud InstanceGroups, namer namer.BackendNamer, recorder
 			ZoneLister:         zl,
 		},
 	}
-	return mignp
+	return multiIGInstances
 }
 
-func (igc *MultiIGNodePool) DeleteInstanceGroup(name string) error {
+func (igc *MultiIGInstances) DeleteInstanceGroup(name string) error {
 	klog.Infof("DeleteInstanceGroup is a no-op. Instance groups will be deleted when the cluster is deleted.")
 	return nil
 }
 
-func (igc *MultiIGNodePool) Sync(nodeNames []string) error {
+func (igc *MultiIGInstances) Sync(nodeNames []string) error {
 	klog.Infof("Sync is a no-op. Instance groups will be synced in the separate controller.")
 	return nil
 }
 
-func (igc *MultiIGNodePool) Get(name, zone string) ([]*compute.InstanceGroup, error) {
+func (igc *MultiIGInstances) Get(name, zone string) ([]*compute.InstanceGroup, error) {
 	var igs []*compute.InstanceGroup
 	igsForZone, err := igc.cloud.ListInstanceGroups(zone)
 	if err != nil {
@@ -61,14 +62,17 @@ func (igc *MultiIGNodePool) Get(name, zone string) ([]*compute.InstanceGroup, er
 			igs = append(igs, ig)
 		}
 	}
+	if len(igs) == 0 {
+		return nil, fmt.Errorf("no Instance Groups belong to cluster")
+	}
 	return igs, nil
 }
 
-func (igc *MultiIGNodePool) List() ([]string, error) {
+func (igc *MultiIGInstances) List() ([]string, error) {
 	return igc.Instances.List()
 }
 
-func (igc *MultiIGNodePool) EnsureInstanceGroupsAndPorts(name string, ports []int64) (igs []*compute.InstanceGroup, err error) {
+func (igc *MultiIGInstances) EnsureInstanceGroupsAndPorts(name string, ports []int64) (igs []*compute.InstanceGroup, err error) {
 	// Instance groups need to be created only in zones that have ready nodes.
 	zones, err := igc.Instances.ListZones(utils.CandidateNodesPredicate)
 	if err != nil {
@@ -89,4 +93,3 @@ func (igc *MultiIGNodePool) EnsureInstanceGroupsAndPorts(name string, ports []in
 	}
 	return igs, nil
 }
-

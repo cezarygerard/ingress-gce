@@ -218,6 +218,7 @@ func (lc *L4NetLBController) shouldProcessService(newSvc, oldSvc *v1.Service) bo
 }
 
 // isRbsBasedLBService returns if the given LoadBalancer service is not legacy target pool based LoadBalancer.
+// TODO (cezarygerard): remove second arg
 func (lc *L4NetLBController) isRbsBasedLBService(svc *v1.Service, l4 *loadbalancers.L4NetLB) bool {
 	// skip services that are being handled by the legacy service controller.
 	if utils.IsLegacyL4NetLBService(svc) {
@@ -359,6 +360,7 @@ func (lc *L4NetLBController) ensureInstanceGroups(service *v1.Service, nodeNames
 	// TODO(kl52752) implement limit for 1000 nodes in instance group
 	// TODO(kl52752) Move instance creation and deletion logic to NodeController
 	// to avoid race condition between controllers
+	// TODO(cezarygerard) ignore nodeports in the L4
 	_, _, nodePorts, _ := utils.GetPortsAndProtocol(service.Spec.Ports)
 	_, err := lc.instancePool.EnsureInstanceGroupsAndPorts(lc.ctx.ClusterNamer.InstanceGroup(), nodePorts)
 	if err != nil {
@@ -408,7 +410,7 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service)
 }
 
 func (lc *L4NetLBController) deleteIG(svc *v1.Service) error {
-	if err := lc.instancePool.DeleteInstanceGroup(lc.ctx.ClusterNamer.InstanceGroup()); err != nil && !utils.IsInUsedByError(err)  {
+	if err := lc.instancePool.DeleteInstanceGroup(lc.ctx.ClusterNamer.InstanceGroup()); err != nil && !utils.IsInUsedByError(err) {
 		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancerFailed",
 			"Error Instance Group, err: %v", err)
 		return err

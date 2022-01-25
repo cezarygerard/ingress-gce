@@ -295,7 +295,7 @@ func (n *Namer) NameBelongsToCluster(name string) bool {
 	// Case 2: k8s-fws-test-sandbox-50a6f22a4cd34e91-ingress-1111111111111--10
 	// The cluster name is 10 which is shorter than clusterNameEvalThreshold.
 	return len(componentClusterName) > clusterNameEvalThreshold &&
-			(strings.HasPrefix(fullClusterName, componentClusterName) ||  strings.HasPrefix(componentClusterName, fullClusterName))
+		(strings.HasPrefix(fullClusterName, componentClusterName) || strings.HasPrefix(componentClusterName, fullClusterName))
 
 }
 

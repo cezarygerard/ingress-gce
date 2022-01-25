@@ -110,7 +110,7 @@ func (i *Instances) ensureInstanceGroupAndPorts(name, zone string, ports []int64
 			klog.Errorf("Failed to get instance group %v/%v after ensuring existence, err: %v", zone, name, err)
 			return nil, err
 		}
-		igs= []*compute.InstanceGroup{ig}
+		igs = []*compute.InstanceGroup{ig}
 	} else {
 		klog.V(5).Infof("Instance group %v/%v already exists.", zone, name)
 	}
@@ -122,6 +122,9 @@ func (i *Instances) ensureInstanceGroupAndPorts(name, zone string, ports []int64
 }
 
 func (i *Instances) setPorts(igs []*compute.InstanceGroup, name, zone string, ports []int64) error {
+	if len(ports) == 0 {
+		return nil
+	}
 	// Build map of existing ports
 	existingPorts := map[int64]bool{}
 	for _, ig := range igs {
@@ -157,7 +160,6 @@ func (i *Instances) setPorts(igs []*compute.InstanceGroup, name, zone string, po
 
 	return nil
 }
-
 
 // DeleteInstanceGroup deletes the given IG by name, from all zones.
 func (i *Instances) DeleteInstanceGroup(name string) error {
