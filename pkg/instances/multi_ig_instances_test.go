@@ -71,7 +71,7 @@ func TestGetInstanceGroups(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			fakeCloud.instanceGroups = tc.instanceGroups
-			result, err := multiIGInst.Get(igName, "zone1")
+			result, err := multiIGInst.Get(igName, zone)
 			if len(result) != tc.expecetedIGs {
 				t.Errorf("Incorrect number of instance grouos, got: %v, want: %v", len(result), tc.expecetedIGs)
 			}
