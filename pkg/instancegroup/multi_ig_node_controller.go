@@ -36,7 +36,7 @@ type MultiIGNodeController struct {
 	// synchronization.
 	hasSynced func() bool
 
-	stopCh chan struct{}
+	stopCh <-chan struct{}
 }
 
 // NewMultiInstancesGroupController returns a new multi instances group controller.
@@ -69,7 +69,7 @@ func NewMultiInstancesGroupController(ctx *context.ControllerContext, stopCh <-c
 	return igc
 }
 
-// Run the queue to process updates for the controller. This must be run in a
+// Run the queue to process updates for the nodes. This must be run in a
 // separate goroutine (method will block until queue shutdown).
 func (igc *MultiIGNodeController) Run() {
 	start := time.Now()
