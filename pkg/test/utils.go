@@ -118,8 +118,8 @@ func NewL4LegacyNetLBService(port int, nodePort int32) *api_v1.Service {
 	return svc
 }
 
-// NewL4NetLBRbsService creates a Service of type LoadBalancer with RBS Annotation
-func NewL4NetLBRbsService(port int) *api_v1.Service {
+// NewL4NetLBRBSService creates a Service of type LoadBalancer with RBS Annotation
+func NewL4NetLBRBSService(port int) *api_v1.Service {
 	svc := NewL4LegacyNetLBServiceWithoutPorts()
 	svc.ObjectMeta.Annotations[annotations.RBSAnnotationKey] = annotations.RBSEnabled
 	svc.Spec.Ports = []api_v1.ServicePort{
@@ -128,8 +128,8 @@ func NewL4NetLBRbsService(port int) *api_v1.Service {
 	return svc
 }
 
-// NewL4NetLBRbsServiceMultiplePorts creates a Service of type LoadBalancer with multiple named ports.
-func NewL4NetLBRbsServiceMultiplePorts(name string, ports []int32) *api_v1.Service {
+// NewL4NetLBRBSServiceMultiplePorts creates a Service of type LoadBalancer with multiple named ports.
+func NewL4NetLBRBSServiceMultiplePorts(name string, ports []int32) *api_v1.Service {
 	svc := NewL4LegacyNetLBServiceWithoutPorts()
 	svc.ObjectMeta.Name = name
 	svc.ObjectMeta.Annotations[annotations.RBSAnnotationKey] = annotations.RBSEnabled

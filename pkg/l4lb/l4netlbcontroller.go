@@ -124,7 +124,7 @@ func (lc *L4NetLBController) needsAddition(newSvc, oldSvc *v1.Service) bool {
 
 // needsDeletion return true if svc required deleting RBS based NetLB
 func (lc *L4NetLBController) needsDeletion(svc *v1.Service) bool {
-	if !lc.isRbsBasedService(svc) {
+	if !lc.isRBSBasedService(svc) {
 		return false
 	}
 	if svc.ObjectMeta.DeletionTimestamp != nil {
@@ -212,7 +212,7 @@ func (lc *L4NetLBController) needsUpdate(newSvc, oldSvc *v1.Service) bool {
 
 // shouldProcessUpdate checks if given service should be process by controller
 func (lc *L4NetLBController) shouldProcessService(newSvc, oldSvc *v1.Service) bool {
-	if !lc.isRbsBasedService(newSvc) {
+	if !lc.isRBSBasedService(newSvc) {
 		return false
 	}
 	if lc.needsAddition(newSvc, oldSvc) || lc.needsUpdate(newSvc, oldSvc) || lc.needsDeletion(newSvc) {
@@ -228,15 +228,15 @@ func (lc *L4NetLBController) hasRBSForwardingRule(svc *v1.Service) bool {
 	return existingFR != nil && existingFR.LoadBalancingScheme == string(cloud.SchemeExternal) && existingFR.BackendService != ""
 }
 
-// isRbsBasedService checks if service has either Rbs annotation, finalizer or RBSForwardingRule
-func (lc *L4NetLBController) isRbsBasedService(svc *v1.Service) bool {
+// isRBSBasedService checks if service has either RBS annotation, finalizer or RBSForwardingRule
+func (lc *L4NetLBController) isRBSBasedService(svc *v1.Service) bool {
+	if svc == nil {
+		return false
+	}
 	if val, ok := svc.Annotations[annotations.RBSAnnotationKey]; ok && val == annotations.RBSEnabled {
 		return true
 	}
-	if utils.HasL4NetLBFinalizerV2(svc) || lc.hasRBSForwardingRule(svc) {
-		return true
-	}
-	return false
+	return utils.HasL4NetLBFinalizerV2(svc) || lc.hasRBSForwardingRule(svc)
 }
 
 func (lc *L4NetLBController) checkHealth() error {
@@ -301,8 +301,8 @@ func (lc *L4NetLBController) sync(key string) error {
 // Returns an error if processing the service update failed.
 func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4LBSyncResult {
 	l4netlb := loadbalancers.NewL4NetLB(service, lc.ctx.Cloud, meta.Regional, lc.namer, lc.ctx.Recorder(service.Namespace), &lc.sharedResourcesLock)
-	// check again that rbs is enabled
-	if !lc.isRbsBasedService(service) {
+	// check again that rbs is enabled.
+	if !lc.isRBSBasedService(service) {
 		return nil
 	}
 
