@@ -26,8 +26,6 @@ func TestRbsModesSetup(t *testing.T) {
 	}{
 		{DISABLED, ""},
 		{ENABLED, "enabled"},
-		{OPTIN, "opt-in"},
-		{ENFORCED, "enforced"},
 	} {
 		rbs := DISABLED
 		if err := rbs.Set(p.expectedStr); err != nil {
@@ -44,7 +42,7 @@ func TestRbsModesSetup(t *testing.T) {
 
 func TestRbsModesSetupFromUndefinedString(t *testing.T) {
 	undefinedRbsMode := "not-rbs-mode"
-	rbs := ENFORCED
+	rbs := ENABLED
 	if err := rbs.Set(undefinedRbsMode); err == nil {
 		t.Errorf("Set should return error")
 	}

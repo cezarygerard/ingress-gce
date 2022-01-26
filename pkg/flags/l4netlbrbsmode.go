@@ -31,16 +31,12 @@ type RbsMode int32
 
 const (
 	DISABLED RbsMode = iota
-	OPTIN
 	ENABLED
-	ENFORCED
 )
 
 var rbsModeNames = [...]string{
 	DISABLED: "",
-	OPTIN:    "opt-in",
 	ENABLED:  "enabled",
-	ENFORCED: "enforced",
 }
 
 // Set overrides flag Value interface.
