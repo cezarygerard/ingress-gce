@@ -40,7 +40,7 @@ type MultiIGNodeController struct {
 }
 
 // NewMultiInstancesGroupController returns a new multi instances group controller.
-func NewMultiInstancesGroupController(ctx *context.ControllerContext, stopCh chan struct{}) *MultiIGNodeController {
+func NewMultiInstancesGroupController(ctx *context.ControllerContext, stopCh <-chan struct{}) *MultiIGNodeController {
 	igc := &MultiIGNodeController{
 		lister:    ctx.NodeInformer.GetIndexer(),
 		hasSynced: ctx.HasSynced,
