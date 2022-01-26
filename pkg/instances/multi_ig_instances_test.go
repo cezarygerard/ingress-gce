@@ -86,7 +86,7 @@ func TestGetInstanceGroups(t *testing.T) {
 func TestEnsureInstanceGroupsAndPorts(t *testing.T) {
 	recorder := &test.FakeRecorderSource{}
 	backendNamer := namer.NewNamer(clusterID, emptyFirewallName)
-	zones := []string{"zone1"}
+	zones := []string{zone}
 	zoneLister := &FakeZoneLister{zones}
 	fakeCloud := NewFakeInstanceGroups(nil, defaultNamer)
 	multiIGInst := NewMultiIGInstances(fakeCloud, backendNamer, recorder, emptyBasePath, zoneLister)
