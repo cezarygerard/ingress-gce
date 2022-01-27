@@ -24,6 +24,8 @@ import (
 	"k8s.io/klog"
 )
 
+// MultiIGInstances implements NodePool Interface. It can use multiple instance groups belonging to cluster but it does not
+// create/delete them. This is a job for separate controller (MultiIGNodeController).
 type MultiIGInstances struct {
 	*Instances
 }

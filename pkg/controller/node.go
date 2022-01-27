@@ -62,7 +62,7 @@ func NewNodeController(ctx *context.ControllerContext, stopCh chan struct{}) *No
 			c.queue.Enqueue(obj)
 		},
 		UpdateFunc: func(oldObj, newObj interface{}) {
-			if nodeStatusChanged(oldObj.(*apiv1.Node), newObj.(*apiv1.Node)) {
+			if utils.NodeStatusChanged(oldObj.(*apiv1.Node), newObj.(*apiv1.Node)) {
 				c.queue.Enqueue(newObj)
 			}
 		},

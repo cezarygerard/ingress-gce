@@ -121,6 +121,7 @@ func (i *Instances) ensureInstanceGroupAndPorts(name, zone string, ports []int64
 	return igs, nil
 }
 
+// setPorts adds named ports to the instance group
 func (i *Instances) setPorts(igs []*compute.InstanceGroup, name, zone string, ports []int64) error {
 	if len(ports) == 0 {
 		return nil
@@ -278,8 +279,8 @@ func (i *Instances) getInstanceReferences(zone string, nodeNames []string) (refs
 	return refs
 }
 
-// Add adds the given instances to the appropriately zoned Instance Group.
-func (i *Instances) Add(groupName string, names []string) error {
+// add adds the given instances to the appropriately zoned Instance Group.
+func (i *Instances) add(groupName string, names []string) error {
 	events.GlobalEventf(i.recorder, core.EventTypeNormal, events.AddNodes, "Adding %s to InstanceGroup %q", events.TruncatedStringList(names), groupName)
 	var errs []error
 	for zone, nodeNames := range i.splitNodesByZone(names) {
@@ -297,8 +298,8 @@ func (i *Instances) Add(groupName string, names []string) error {
 	return err
 }
 
-// Remove removes the given instances from the appropriately zoned Instance Group.
-func (i *Instances) Remove(groupName string, names []string) error {
+// remove removes the given instances from the appropriately zoned Instance Group.
+func (i *Instances) remove(groupName string, names []string) error {
 	events.GlobalEventf(i.recorder, core.EventTypeNormal, events.RemoveNodes, "Removing %s from InstanceGroup %q", events.TruncatedStringList(names), groupName)
 	var errs []error
 	for zone, nodeNames := range i.splitNodesByZone(names) {
@@ -359,7 +360,7 @@ func (i *Instances) Sync(nodes []string) (err error) {
 
 		start := time.Now()
 		if len(removeNodes) != 0 {
-			err = i.Remove(igName, removeNodes)
+			err = i.remove(igName, removeNodes)
 			klog.V(2).Infof("Remove(%q, _) = %v (took %s); nodes = %v", igName, err, time.Now().Sub(start), removeNodes)
 			if err != nil {
 				return err
@@ -368,7 +369,7 @@ func (i *Instances) Sync(nodes []string) (err error) {
 
 		start = time.Now()
 		if len(addNodes) != 0 {
-			err = i.Add(igName, addNodes)
+			err = i.add(igName, addNodes)
 			klog.V(2).Infof("Add(%q, _) = %v (took %s); nodes = %v", igName, err, time.Now().Sub(start), addNodes)
 			if err != nil {
 				return err

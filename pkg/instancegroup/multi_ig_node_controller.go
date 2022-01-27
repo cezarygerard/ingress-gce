@@ -17,6 +17,7 @@ limitations under the License.
 package instancegroup
 
 import (
+	apiv1 "k8s.io/api/core/v1"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/context"
@@ -63,7 +64,9 @@ func NewMultiInstancesGroupController(ctx *context.ControllerContext, stopCh <-c
 			igc.queue.Enqueue(obj)
 		},
 		UpdateFunc: func(oldObj, newObj interface{}) {
-			igc.queue.Enqueue(newObj)
+			if utils.NodeStatusChanged(oldObj.(*apiv1.Node), newObj.(*apiv1.Node)) {
+				igc.queue.Enqueue(newObj)
+			}
 		},
 	})
 	return igc
