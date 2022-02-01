@@ -24,6 +24,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/core/v1"
+	"google.golang.org/api/compute/v1"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -308,7 +309,8 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4
 		return &loadbalancers.L4LBSyncResult{Error: err}
 	}
 
-	if err := lc.ensureInstanceGroups(service, nodeNames); err != nil {
+	igs, err := lc.ensureInstanceGroups(service, nodeNames);
+	if  err != nil {
 		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncInstanceGroupsFailed",
 			"Error syncing instance group, err: %v", err)
 		return &loadbalancers.L4LBSyncResult{Error: err}
@@ -323,7 +325,7 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4
 		return syncResult
 	}
 
-	if err = lc.ensureBackendLinking(l4netlb.ServicePort); err != nil {
+	if err = lc.ensureBackendLinking(igs); err != nil {
 		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
 			"Error linking instance groups to backend service, err: %v", err)
 		syncResult.Error = err
@@ -348,26 +350,22 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4
 	return nil
 }
 
-func (lc *L4NetLBController) ensureBackendLinking(port utils.ServicePort) error {
-	zones, err := lc.translator.ListZones(utils.CandidateNodesPredicate)
-	if err != nil {
-		return err
-	}
-	return lc.igLinker.Link(port, lc.ctx.Cloud.ProjectID(), zones)
+func (lc *L4NetLBController) ensureBackendLinking(igs []*compute.InstanceGroup) error {
+	return lc.igLinker.Link(igs)
 }
 
-func (lc *L4NetLBController) ensureInstanceGroups(service *v1.Service, nodeNames []string) error {
+func (lc *L4NetLBController) ensureInstanceGroups(service *v1.Service, nodeNames []string) ([]*compute.InstanceGroup, error) {
 	// TODO(kl52752) implement limit for 1000 nodes in instance group
 	// TODO(kl52752) Move instance creation and deletion logic to NodeController
 	// to avoid race condition between controllers
 	// TODO(cezarygerard) ignore named ports in the L4, they are not needed
 	_, _, nodePorts, _ := utils.GetPortsAndProtocol(service.Spec.Ports)
 	// TODO(cezarygerard) return instance groups from this function to be used for IG Linker
-	_, err := lc.instancePool.EnsureInstanceGroupsAndPorts(lc.ctx.ClusterNamer.InstanceGroup(), nodePorts)
+	igs, err := lc.instancePool.EnsureInstanceGroupsAndPorts(lc.ctx.ClusterNamer.InstanceGroup(), nodePorts)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return lc.instancePool.Sync(nodeNames)
+	return igs, lc.instancePool.Sync(nodeNames)
 }
 
 // hasLegacyForwardingRule return true if forwarding rule is target pool based

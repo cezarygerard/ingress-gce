@@ -16,6 +16,7 @@ package backends
 import (
 	"fmt"
 
+	"google.golang.org/api/compute/v1"
 	cloudprovider "github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -38,32 +39,32 @@ func NewRegionalInstanceGroupLinker(instancePool instances.NodePool, backendPool
 }
 
 // Link performs linking instance groups to regional backend service
-func (linker *RegionalInstanceGroupLinker) Link(sp utils.ServicePort, projectID string, zones []string) error {
-	var igLinks []string
-
-	for _, zone := range zones {
-		key := meta.ZonalKey(sp.IGName(), zone)
-		//TODO (cezarygerard): link all IGs by reusing []*compute.InstanceGroup returned from instancepool in the l4 controller
-		igSelfLink := cloudprovider.SelfLink(meta.VersionGA, projectID, "instanceGroups", key)
-		igLinks = append(igLinks, igSelfLink)
-	}
-
-	addIGs := sets.String{}
-	for _, igLink := range igLinks {
-		path, err := utils.RelativeResourceName(igLink)
-		if err != nil {
-			return fmt.Errorf("failed to parse instance group %s: %w", igLink, err)
-		}
-		addIGs.Insert(path)
-	}
-	if len(addIGs) == 0 {
-		return nil
-	}
-	// TODO(kl52752) Check for existing links and add only new one
+func (linker *RegionalInstanceGroupLinker) Link(igs []*compute.InstanceGroup) error {
+	//var igLinks []string
+	//
+	//for _, zone := range zones {
+	//	key := meta.ZonalKey(sp.IGName(), zone)
+	//	//TODO (cezarygerard): link all IGs by reusing []*compute.InstanceGroup returned from instancepool in the l4 controller
+	//	igSelfLink := cloudprovider.SelfLink(meta.VersionGA, projectID, "instanceGroups", key)
+	//	igLinks = append(igLinks, igSelfLink)
+	//}
+	//
+	//addIGs := sets.String{}
+	//for _, igLink := range igLinks {
+	//	path, err := utils.RelativeResourceName(igLink)
+	//	if err != nil {
+	//		return fmt.Errorf("failed to parse instance group %s: %w", igLink, err)
+	//	}
+	//	addIGs.Insert(path)
+	//}
+	//if len(addIGs) == 0 {
+	//	return nil
+	//}
+	//// TODO(kl52752) Check for existing links and add only new one
 	var newBackends []*composite.Backend
-	for _, igLink := range addIGs.List() {
+	for _, ig := range igs {
 		b := &composite.Backend{
-			Group: igLink,
+			Group: ig.SelfLink,
 		}
 		newBackends = append(newBackends, b)
 	}
