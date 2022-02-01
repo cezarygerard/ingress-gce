@@ -351,8 +351,8 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	ctx.Start(stopCh)
 
 	if flags.F.EnableMultipleIGs {
-		igController := instancegroup.NewMultiInstancesGroupController(ctx, stopCh)
-		go igController.Run()
+		multiIGNodeController := instancegroup.NewMultiIGNodeController(ctx, stopCh)
+		go multiIGNodeController.Run()
 	} else {
 		nodeController := controller.NewNodeController(ctx, stopCh)
 		go nodeController.Run()
