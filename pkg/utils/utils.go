@@ -366,6 +366,16 @@ func NodeIsReady(node *api_v1.Node) bool {
 	return false
 }
 
+func NodeStatusChanged(old, cur *api_v1.Node) bool {
+	if old.Spec.Unschedulable != cur.Spec.Unschedulable {
+		return true
+	}
+	if NodeIsReady(old) != NodeIsReady(cur) {
+		return true
+	}
+	return false
+}
+
 // NodeConditionPredicate is a function that indicates whether the given node's conditions meet
 // some set of criteria defined by the function.
 type NodeConditionPredicate func(node *api_v1.Node) bool
@@ -661,14 +671,9 @@ func IsSubsettingL4ILBService(svc *api_v1.Service) bool {
 	return slice.ContainsString(svc.ObjectMeta.Finalizers, common.ILBFinalizerV2, nil)
 }
 
-// IsL4NetLBService returns true if the given LoadBalancer service is managed by L4NetLBController.
-func IsL4NetLBService(svc *api_v1.Service) bool {
+// HasL4NetLBFinalizerV2 returns true if the given Service has NetLBFinalizerV2
+func HasL4NetLBFinalizerV2(svc *api_v1.Service) bool {
 	return slice.ContainsString(svc.ObjectMeta.Finalizers, common.NetLBFinalizerV2, nil)
-}
-
-// IsLegacyL4NetLBService returns true if the given LoadBalancer service is managed by service controller.
-func IsLegacyL4NetLBService(svc *api_v1.Service) bool {
-	return slice.ContainsString(svc.ObjectMeta.Finalizers, common.LegacyNetLBFinalizer, nil)
 }
 
 func LegacyForwardingRuleName(svc *api_v1.Service) string {

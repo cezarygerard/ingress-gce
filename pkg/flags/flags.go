@@ -86,7 +86,7 @@ var (
 		NumIngressWorkers                int
 		RunIngressController             bool
 		RunL4Controller                  bool
-		L4elbRbsMode                     RbsMode
+		RunL4NetLBController             bool
 		Version                          bool
 		WatchNamespace                   string
 		LeaderElection                   LeaderElectionConfiguration
@@ -105,7 +105,7 @@ var (
 		EnableIngressGAFields          bool
 		EnableTrafficScaling           bool
 		EnableEndpointSlices           bool
-		EnableMultipleIgs              bool
+		EnableMultipleIGs              bool
 		MaxIgSize                      int
 	}{
 		GCERateLimitScale: 1.0,
@@ -234,11 +234,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableV2FrontendNamer, "enable-v2-frontend-namer", false, "Enable v2 ingress frontend naming policy.")
 	flag.BoolVar(&F.RunIngressController, "run-ingress-controller", true, `Optional, whether or not to run IngressController as part of glbc. If set to false, ingress resources will not be processed. Only the L4 Service controller will be run, if that flag is set to true.`)
 	flag.BoolVar(&F.RunL4Controller, "run-l4-controller", false, `Optional, whether or not to run L4 Service Controller as part of glbc. If set to true, services of Type:LoadBalancer with Internal annotation will be processed by this controller.`)
-	flag.Var(&F.L4elbRbsMode, "l4elb-rbs-mode", `If set L4NetLbController will be run.
-	Possible Values:
-	opt-in: manages NetLB services that contains opt-in annotation or NetLB finalizer,
-	enabled: manages NetLB services that contains NetLB finalizer,
-	enforced: manages all NetLB services`)
+	flag.BoolVar(&F.RunL4NetLBController, "run-l4-netlb-controller", false, `Optional, f enabled then the L4NetLbController will be run.`)
 	flag.BoolVar(&F.EnableBackendConfigHealthCheck, "enable-backendconfig-healthcheck", false, "Enable configuration of HealthChecks from the BackendConfig")
 	flag.BoolVar(&F.EnablePSC, "enable-psc", false, "Enable PSC controller")
 	flag.BoolVar(&F.EnableIngressGAFields, "enable-ingress-ga-fields", false, "Enable using Ingress Class GA features")
@@ -247,7 +243,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.StringVar(&F.GKEClusterType, "gke-cluster-type", "ZONAL", "The cluster type of the GKE cluster this Ingress Controller will be interacting with")
 	flag.BoolVar(&F.EnableTrafficScaling, "enable-traffic-scaling", false, "Enable support for Service {max-rate-per-endpoint, capacity-scaler}")
 	flag.BoolVar(&F.EnableEndpointSlices, "enable-endpoint-slices", false, "Enable using Endpoint Slices API instead of Endpoints API")
-	flag.BoolVar(&F.EnableMultipleIgs, "enable-multiple-igs", false, "Enable using unmanaged instance group management")
+	flag.BoolVar(&F.EnableMultipleIGs, "enable-multiple-igs", false, "Enable using multi instance group management")
 	flag.IntVar(&F.MaxIgSize, "max-ig-size", 1000, "Max number of instances in Instance Group")
 }
 

@@ -27,6 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/ingress-gce/pkg/frontendconfig"
 	"k8s.io/ingress-gce/pkg/ingparams"
+	"k8s.io/ingress-gce/pkg/instancegroup"
 	"k8s.io/ingress-gce/pkg/l4lb"
 	"k8s.io/ingress-gce/pkg/psc"
 	"k8s.io/ingress-gce/pkg/serviceattachment"
@@ -46,17 +47,16 @@ import (
 	serviceattachmentclient "k8s.io/ingress-gce/pkg/serviceattachment/client/clientset/versioned"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 
-	ingctx "k8s.io/ingress-gce/pkg/context"
-	"k8s.io/ingress-gce/pkg/controller"
-	"k8s.io/ingress-gce/pkg/neg"
-	negtypes "k8s.io/ingress-gce/pkg/neg/types"
-
 	"k8s.io/ingress-gce/cmd/glbc/app"
 	"k8s.io/ingress-gce/pkg/backendconfig"
+	ingctx "k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/controller"
 	"k8s.io/ingress-gce/pkg/crd"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/flags"
 	_ "k8s.io/ingress-gce/pkg/klog"
+	"k8s.io/ingress-gce/pkg/neg"
+	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/version"
 )
 
@@ -350,16 +350,18 @@ func runControllers(ctx *ingctx.ControllerContext) {
 
 	ctx.Start(stopCh)
 
-	nodeController := controller.NewNodeController(ctx, stopCh)
-	go nodeController.Run()
+	if flags.F.EnableMultipleIGs {
+		multiIGNodeController := instancegroup.NewMultiIGNodeController(ctx, stopCh)
+		go multiIGNodeController.Run()
+	} else {
+		nodeController := controller.NewNodeController(ctx, stopCh)
+		go nodeController.Run()
+	}
 
 	// The L4NetLbController will be run when RbsMode flag is Set
-	if flags.F.L4elbRbsMode != flags.DISABLED {
-		//TODO (kl52752) Implement RbsModes in L4NetLBController
+	if flags.F.RunL4NetLBController {
 		l4netlbController := l4lb.NewL4NetLBController(ctx, stopCh)
 
-		// Before we can Run controller we need to init instance Pool with translator
-		// transaltor is created in context so we need to do this after context is created
 		klog.V(0).Infof("L4NetLB controller started")
 		go l4netlbController.Run()
 	}
