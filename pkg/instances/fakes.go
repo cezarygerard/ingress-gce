@@ -31,14 +31,14 @@ import (
 // NewEmptyFakeInstanceGroups creates a new FakeInstanceGroups without zones, igs or instances.
 func NewEmptyFakeInstanceGroups() *FakeInstanceGroups {
 	return &FakeInstanceGroups{
-		ZonesToIGsToInstances: map[string]map[*compute.InstanceGroup]sets.String{},
+		zonesToIGsToInstances: map[string]IGsToInstances{},
 	}
 }
 
 // NewFakeInstanceGroups creates a new FakeInstanceGroups.
-func NewFakeInstanceGroups(zonesToIGsToInstances map[string]map[*compute.InstanceGroup]sets.String) *FakeInstanceGroups {
+func NewFakeInstanceGroups(zonesToIGsToInstances map[string]IGsToInstances) *FakeInstanceGroups {
 	return &FakeInstanceGroups{
-		ZonesToIGsToInstances: zonesToIGsToInstances,
+		zonesToIGsToInstances: zonesToIGsToInstances,
 	}
 }
 
@@ -60,16 +60,18 @@ func (z *FakeZoneLister) GetZoneForNode(name string) (string, error) {
 	return z.Zones[0], nil
 }
 
+type IGsToInstances map[*compute.InstanceGroup]sets.String
+
 // FakeInstanceGroups fakes out the instance groups api.
 type FakeInstanceGroups struct {
 	getResult             *compute.InstanceGroup
 	calls                 []int
-	ZonesToIGsToInstances map[string]map[*compute.InstanceGroup]sets.String
+	zonesToIGsToInstances map[string]IGsToInstances
 }
 
 // getInstanceGroup implements fake getting ig by name in zone
 func (f *FakeInstanceGroups) getInstanceGroup(name, zone string) (*compute.InstanceGroup, error) {
-	for ig := range f.ZonesToIGsToInstances[zone] {
+	for ig := range f.zonesToIGsToInstances[zone] {
 		if ig.Name == name {
 			return ig, nil
 		}
@@ -86,16 +88,16 @@ func (f *FakeInstanceGroups) GetInstanceGroup(name, zone string) (*compute.Insta
 
 // CreateInstanceGroup fakes instance group creation.
 func (f *FakeInstanceGroups) CreateInstanceGroup(ig *compute.InstanceGroup, zone string) error {
-	if _, ok := f.ZonesToIGsToInstances[zone]; !ok {
-		f.ZonesToIGsToInstances[zone] = map[*compute.InstanceGroup]sets.String{}
+	if _, ok := f.zonesToIGsToInstances[zone]; !ok {
+		f.zonesToIGsToInstances[zone] = map[*compute.InstanceGroup]sets.String{}
 	}
-	if _, ok := f.ZonesToIGsToInstances[zone][ig]; ok {
+	if _, ok := f.zonesToIGsToInstances[zone][ig]; ok {
 		return test.FakeGoogleAPIConflictErr()
 	}
 
 	ig.SelfLink = cloud.NewInstanceGroupsResourceID("mock-project", zone, ig.Name).SelfLink(meta.VersionGA)
 	ig.Zone = zone
-	f.ZonesToIGsToInstances[zone][ig] = sets.NewString()
+	f.zonesToIGsToInstances[zone][ig] = sets.NewString()
 	return nil
 }
 
@@ -105,7 +107,7 @@ func (f *FakeInstanceGroups) DeleteInstanceGroup(name, zone string) error {
 	if err != nil {
 		return err
 	}
-	delete(f.ZonesToIGsToInstances[zone], ig)
+	delete(f.zonesToIGsToInstances[zone], ig)
 	return nil
 }
 
@@ -115,13 +117,13 @@ func (f *FakeInstanceGroups) ListInstancesInInstanceGroup(name, zone string, sta
 	if err != nil {
 		return nil, err
 	}
-	return getInstanceList(f.ZonesToIGsToInstances[zone][ig]).Items, nil
+	return getInstanceList(f.zonesToIGsToInstances[zone][ig]).Items, nil
 }
 
 // ListInstanceGroups fakes listing instance groups in a zone
 func (f *FakeInstanceGroups) ListInstanceGroups(zone string) ([]*compute.InstanceGroup, error) {
 	igs := []*compute.InstanceGroup{}
-	for ig := range f.ZonesToIGsToInstances[zone] {
+	for ig := range f.zonesToIGsToInstances[zone] {
 		igs = append(igs, ig)
 	}
 	return igs, nil
@@ -136,19 +138,8 @@ func (f *FakeInstanceGroups) AddInstancesToInstanceGroup(name, zone string, inst
 		return err
 	}
 
-	f.ZonesToIGsToInstances[zone][ig].Insert(instanceNames...)
+	f.zonesToIGsToInstances[zone][ig].Insert(instanceNames...)
 	return nil
-}
-
-// GetInstancesByZone returns the zone to instances map.
-func (f *FakeInstanceGroups) GetInstancesByZone() map[string][]string {
-	zonesToInstances := map[string][]string{}
-	for zone, igs := range f.ZonesToIGsToInstances {
-		for _, instances := range igs {
-			zonesToInstances[zone] = append(zonesToInstances[zone], instances.List()...)
-		}
-	}
-	return zonesToInstances
 }
 
 // RemoveInstancesFromInstanceGroup fakes removing instances from an instance group.
@@ -159,7 +150,7 @@ func (f *FakeInstanceGroups) RemoveInstancesFromInstanceGroup(name, zone string,
 	if err != nil {
 		return err
 	}
-	f.ZonesToIGsToInstances[zone][ig].Delete(instanceNames...)
+	f.zonesToIGsToInstances[zone][ig].Delete(instanceNames...)
 	return nil
 }
 

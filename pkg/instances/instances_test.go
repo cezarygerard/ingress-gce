@@ -21,6 +21,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/test"
@@ -40,24 +41,43 @@ func newNodePool(f *FakeInstanceGroups, zone string) NodePool {
 	return pool
 }
 
+func getInstancesSet(f *FakeInstanceGroups, ig *compute.InstanceGroup) (sets.String, error) {
+	instances, err := f.ListInstancesInInstanceGroup(ig.Name, defaultZone, allInstances)
+	if err != nil {
+		return nil, err
+	}
+	instancesSet := sets.NewString()
+	for _, instance := range instances {
+		parsedInstanceURL, err := cloud.ParseResourceURL(instance.Instance)
+		if err != nil {
+			return nil, err
+		}
+		instancesSet.Insert(parsedInstanceURL.Key.Name)
+	}
+	return instancesSet, nil
+}
+
 func TestNodePoolSync(t *testing.T) {
 	ig := &compute.InstanceGroup{Name: defaultNamer.InstanceGroup()}
-	f := NewFakeInstanceGroups(map[string]map[*compute.InstanceGroup]sets.String{
+	fakeIGs := NewFakeInstanceGroups(map[string]IGsToInstances{
 		defaultZone: {
-			ig: sets.NewString([]string{"n1", "n2"}...),
+			ig: sets.NewString("n1", "n2"),
 		},
 	})
-	pool := newNodePool(f, defaultZone)
+	pool := newNodePool(fakeIGs, defaultZone)
 	pool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{80})
 
 	// KubeNodes: n1
 	// GCENodes: n1, n2
 	// Remove n2 from the instance group.
 
-	f.calls = []int{}
-	kubeNodes := sets.NewString([]string{"n1"}...)
+	fakeIGs.calls = []int{}
+	kubeNodes := sets.NewString("n1")
 	pool.Sync(kubeNodes.List())
-	instances := f.ZonesToIGsToInstances[defaultZone][ig]
+	instances, err := getInstancesSet(fakeIGs, ig)
+	if err != nil {
+		t.Fatalf("Error while getting instances in instance group. IG: %v Error: %v", ig, err)
+	}
 	if instances.Len() != kubeNodes.Len() || !kubeNodes.IsSuperset(instances) {
 		t.Fatalf("%v != %v", kubeNodes, instances)
 	}
@@ -66,18 +86,21 @@ func TestNodePoolSync(t *testing.T) {
 	// GCENodes: n1
 	// Try to add n2 to the instance group.
 
-	f = NewFakeInstanceGroups(map[string]map[*compute.InstanceGroup]sets.String{
+	fakeIGs = NewFakeInstanceGroups(map[string]IGsToInstances{
 		defaultZone: {
-			ig: sets.NewString([]string{"n1"}...),
+			ig: sets.NewString("n1"),
 		},
 	})
-	pool = newNodePool(f, defaultZone)
+	pool = newNodePool(fakeIGs, defaultZone)
 	pool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{80})
 
-	f.calls = []int{}
-	kubeNodes = sets.NewString([]string{"n1", "n2"}...)
+	fakeIGs.calls = []int{}
+	kubeNodes = sets.NewString("n1", "n2")
 	pool.Sync(kubeNodes.List())
-	instances = f.ZonesToIGsToInstances[defaultZone][ig]
+	instances, err = getInstancesSet(fakeIGs, ig)
+	if err != nil {
+		t.Fatalf("Error while getting instances in instance group. IG: %v Error: %v", ig, err)
+	}
 	if instances.Len() != kubeNodes.Len() ||
 		!kubeNodes.IsSuperset(instances) {
 		t.Fatalf("%v != %v", kubeNodes, instances)
@@ -87,30 +110,30 @@ func TestNodePoolSync(t *testing.T) {
 	// GCENodes: n1, n2
 	// Do nothing.
 
-	f = NewFakeInstanceGroups(map[string]map[*compute.InstanceGroup]sets.String{
+	fakeIGs = NewFakeInstanceGroups(map[string]IGsToInstances{
 		defaultZone: {
-			ig: sets.NewString([]string{"n1", "n2"}...),
+			ig: sets.NewString("n1", "n2"),
 		},
 	})
-	pool = newNodePool(f, defaultZone)
+	pool = newNodePool(fakeIGs, defaultZone)
 	pool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{80})
 
-	f.calls = []int{}
-	kubeNodes = sets.NewString([]string{"n1", "n2"}...)
+	fakeIGs.calls = []int{}
+	kubeNodes = sets.NewString("n1", "n2")
 	pool.Sync(kubeNodes.List())
-	if len(f.calls) != 0 {
+	if len(fakeIGs.calls) != 0 {
 		t.Fatalf(
-			"Did not expect any calls, got %+v", f.calls)
+			"Did not expect any calls, got %+v", fakeIGs.calls)
 	}
 }
 
 func TestSetNamedPorts(t *testing.T) {
-	f := NewFakeInstanceGroups(map[string]map[*compute.InstanceGroup]sets.String{
+	fakeIGs := NewFakeInstanceGroups(map[string]IGsToInstances{
 		defaultZone: {
-			&compute.InstanceGroup{Name: "ig"}: sets.NewString([]string{"ig"}...),
+			&compute.InstanceGroup{Name: "ig"}: sets.NewString("ig"),
 		},
 	})
-	pool := newNodePool(f, defaultZone)
+	pool := newNodePool(fakeIGs, defaultZone)
 
 	testCases := []struct {
 		activePorts   []int64
@@ -159,9 +182,9 @@ func TestSetNamedPorts(t *testing.T) {
 }
 
 func TestGetInstanceReferences(t *testing.T) {
-	pool := newNodePool(NewFakeInstanceGroups(map[string]map[*compute.InstanceGroup]sets.String{
+	pool := newNodePool(NewFakeInstanceGroups(map[string]IGsToInstances{
 		defaultZone: {
-			&compute.InstanceGroup{Name: "ig"}: sets.NewString([]string{"ig"}...),
+			&compute.InstanceGroup{Name: "ig"}: sets.NewString("ig"),
 		},
 	}), defaultZone)
 	instances := pool.(*Instances)
