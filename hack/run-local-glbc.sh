@@ -43,6 +43,8 @@ ${GLBC} \
     --running-in-cluster=false \
     --run-l4-netlb-controller=true \
     --logtostderr --v=${V} \
+    --run-l4-netlb-controller \
+    --run-l4-controller \
     --config-file-path=${GCECONF} \
     "${@}" \
     2>&1 | tee -a /tmp/glbc.log
