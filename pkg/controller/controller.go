@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	compute "google.golang.org/api/compute/v1"
 	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -90,8 +91,8 @@ type LoadBalancerController struct {
 	gcLock sync.Mutex
 
 	// linker implementations for backends
-	negLinker backends.Linker
-	igLinker  backends.Linker
+	negLinker backends.NegLinker
+	igLinker  backends.IGLinker
 
 	// Ingress sync + GC implementation
 	ingSyncer ingsync.Syncer
@@ -372,12 +373,15 @@ func (lbc *LoadBalancerController) SyncBackends(state interface{}) error {
 	}
 	ingSvcPorts := syncState.urlMap.AllServicePorts()
 
+	var igs []*compute.InstanceGroup
 	// Only sync instance group when IG is used for this ingress
 	if len(nodePorts(ingSvcPorts)) > 0 {
-		if err := lbc.syncInstanceGroup(syncState.ing, ingSvcPorts); err != nil {
+		igsInside, err := lbc.syncInstanceGroup(syncState.ing, ingSvcPorts)
+		if err != nil {
 			klog.Errorf("Failed to sync instance group for ingress %v: %v", syncState.ing, err)
 			return err
 		}
+		igs = igsInside
 	} else {
 		klog.V(2).Infof("Skip syncing instance groups for ingress %v/%v", syncState.ing.Namespace, syncState.ing.Name)
 	}
@@ -387,15 +391,9 @@ func (lbc *LoadBalancerController) SyncBackends(state interface{}) error {
 		return err
 	}
 
-	// Get the zones our groups live in.
-	zones, err := lbc.Translator.ListZones(utils.CandidateNodesPredicate)
+	groupKeys, err := lbc.getGroupKeys()
 	if err != nil {
-		klog.Errorf("lbc.Translator.ListZones(utils.CandidateNodesPredicate) = %v", err)
 		return err
-	}
-	var groupKeys []backends.GroupKey
-	for _, zone := range zones {
-		groupKeys = append(groupKeys, backends.GroupKey{Zone: zone})
 	}
 
 	// Link backends to groups.
@@ -406,7 +404,7 @@ func (lbc *LoadBalancerController) SyncBackends(state interface{}) error {
 			linkErr = lbc.negLinker.Link(sp, groupKeys)
 		} else {
 			// Otherwise, link backend to IG's.
-			linkErr = lbc.igLinker.Link(sp, groupKeys)
+			linkErr = lbc.igLinker.Link(sp, igs)
 		}
 		if linkErr != nil {
 			return linkErr
@@ -416,22 +414,36 @@ func (lbc *LoadBalancerController) SyncBackends(state interface{}) error {
 	return nil
 }
 
+func (lbc *LoadBalancerController) getGroupKeys() ([]backends.GroupKey, error) {
+	// Get the zones our groups live in.
+	zones, err := lbc.Translator.ListZones(utils.CandidateNodesPredicate)
+	if err != nil {
+		klog.Errorf("lbc.Translator.ListZones(utils.CandidateNodesPredicate) = %v", err)
+		return nil, err
+	}
+	var groupKeys []backends.GroupKey
+	for _, zone := range zones {
+		groupKeys = append(groupKeys, backends.GroupKey{Zone: zone})
+	}
+	return groupKeys, nil
+}
+
 // syncInstanceGroup creates instance groups, syncs instances, sets named ports and updates instance group annotation
-func (lbc *LoadBalancerController) syncInstanceGroup(ing *v1.Ingress, ingSvcPorts []utils.ServicePort) error {
+func (lbc *LoadBalancerController) syncInstanceGroup(ing *v1.Ingress, ingSvcPorts []utils.ServicePort) ([]*compute.InstanceGroup, error) {
 	nodePorts := nodePorts(ingSvcPorts)
 	klog.V(2).Infof("Syncing Instance Group for ingress %v/%v with nodeports %v", ing.Namespace, ing.Name, nodePorts)
 	igs, err := lbc.instancePool.EnsureInstanceGroupsAndPorts(lbc.ctx.ClusterNamer.InstanceGroup(), nodePorts)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	nodeNames, err := utils.GetReadyNodeNames(listers.NewNodeLister(lbc.nodeLister))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	// Add/remove instances to the instance groups.
 	if err = lbc.instancePool.Sync(nodeNames); err != nil {
-		return err
+		return nil, err
 	}
 
 	// TODO: Remove this after deprecation
@@ -443,15 +455,15 @@ func (lbc *LoadBalancerController) syncInstanceGroup(ing *v1.Ingress, ingSvcPort
 			newAnnotations = make(map[string]string)
 		}
 		if err = setInstanceGroupsAnnotation(newAnnotations, igs); err != nil {
-			return err
+			return nil, err
 		}
 		if err = updateAnnotations(lbc.ctx.KubeClient, ing, newAnnotations); err != nil {
-			return err
+			return nil, err
 		}
 		// This short-circuit will stop the syncer from moving to next step.
-		return ingsync.ErrSkipBackendsSync
+		return nil, ingsync.ErrSkipBackendsSync
 	}
-	return nil
+	return igs, nil
 }
 
 // GCBackends implements Controller.

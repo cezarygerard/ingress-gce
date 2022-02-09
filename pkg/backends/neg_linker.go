@@ -38,14 +38,14 @@ type negLinker struct {
 }
 
 // negLinker is a Linker
-var _ Linker = (*negLinker)(nil)
+var _ NegLinker = (*negLinker)(nil)
 
 func NewNEGLinker(
 	backendPool Pool,
 	negGetter NEGGetter,
 	cloud *gce.Cloud,
 	svcNegLister cache.Indexer,
-) Linker {
+) NegLinker {
 	return &negLinker{
 		backendPool:  backendPool,
 		negGetter:    negGetter,

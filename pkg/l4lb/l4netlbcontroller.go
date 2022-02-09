@@ -23,6 +23,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	compute "google.golang.org/api/compute/v1"
 	v1 "k8s.io/api/core/v1"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
@@ -55,7 +56,7 @@ type L4NetLBController struct {
 
 	backendPool  *backends.Backends
 	instancePool instances.NodePool
-	igLinker     *backends.RegionalInstanceGroupLinker
+	igLinker     backends.IGLinker
 }
 
 // NewL4NetLBController creates a controller for l4 external loadbalancer.
@@ -77,7 +78,7 @@ func NewL4NetLBController(
 		backendPool:   backendPool,
 		namer:         ctx.L4Namer,
 		instancePool:  ctx.InstancePool,
-		igLinker:      backends.NewRegionalInstanceGroupLinker(ctx.InstancePool, backendPool),
+		igLinker:      backends.NewInstanceGroupLinker(ctx.InstancePool, backendPool),
 	}
 	l4netLBc.svcQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("l4netLB", "services", ctx.NumL4Workers, l4netLBc.sync)
 
@@ -325,8 +326,8 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4
 	if err != nil {
 		return &loadbalancers.L4LBSyncResult{Error: err}
 	}
-
-	if err := lc.ensureInstanceGroups(service, nodeNames); err != nil {
+	igs, err := lc.ensureInstanceGroups(service, nodeNames)
+	if err != nil {
 		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncInstanceGroupsFailed",
 			"Error syncing instance group, err: %v", err)
 		return &loadbalancers.L4LBSyncResult{Error: err}
@@ -340,8 +341,7 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4
 			"Error ensuring Resource for L4 External LoadBalancer, err: %v", syncResult.Error)
 		return syncResult
 	}
-
-	if err = lc.ensureBackendLinking(l4netlb.ServicePort); err != nil {
+	if err = lc.igLinker.Link(l4netlb.ServicePort, igs); err != nil {
 		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
 			"Error linking instance groups to backend service, err: %v", err)
 		syncResult.Error = err
@@ -366,24 +366,19 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4
 	return nil
 }
 
-func (lc *L4NetLBController) ensureBackendLinking(port utils.ServicePort) error {
-	zones, err := lc.translator.ListZones(utils.CandidateNodesPredicate)
-	if err != nil {
-		return err
-	}
-	return lc.igLinker.Link(port, lc.ctx.Cloud.ProjectID(), zones)
-}
-
-func (lc *L4NetLBController) ensureInstanceGroups(service *v1.Service, nodeNames []string) error {
+func (lc *L4NetLBController) ensureInstanceGroups(service *v1.Service, nodeNames []string) ([]*compute.InstanceGroup, error) {
 	// TODO(kl52752) implement limit for 1000 nodes in instance group
 	// TODO(kl52752) Move instance creation and deletion logic to NodeController
 	// to avoid race condition between controllers
 	_, _, nodePorts, _ := utils.GetPortsAndProtocol(service.Spec.Ports)
-	_, err := lc.instancePool.EnsureInstanceGroupsAndPorts(lc.ctx.ClusterNamer.InstanceGroup(), nodePorts)
+	igs, err := lc.instancePool.EnsureInstanceGroupsAndPorts(lc.ctx.ClusterNamer.InstanceGroup(), nodePorts)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return lc.instancePool.Sync(nodeNames)
+	if err := lc.instancePool.Sync(nodeNames); err != nil {
+		return nil, err
+	}
+	return igs, nil
 }
 
 // garbageCollectRBSNetLB cleans-up all gce resources related to service and removes NetLB finalizer

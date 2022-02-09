@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	compute "google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/instances"
@@ -68,9 +69,9 @@ type instanceGroupLinker struct {
 }
 
 // instanceGroupLinker is a Linker
-var _ Linker = (*instanceGroupLinker)(nil)
+var _ IGLinker = (*instanceGroupLinker)(nil)
 
-func NewInstanceGroupLinker(instancePool instances.NodePool, backendPool Pool) Linker {
+func NewInstanceGroupLinker(instancePool instances.NodePool, backendPool Pool) IGLinker {
 	return &instanceGroupLinker{
 		instancePool: instancePool,
 		backendPool:  backendPool,
@@ -78,13 +79,9 @@ func NewInstanceGroupLinker(instancePool instances.NodePool, backendPool Pool) L
 }
 
 // Link implements Link.
-func (l *instanceGroupLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
+func (l *instanceGroupLinker) Link(sp utils.ServicePort, igs []*compute.InstanceGroup) error {
 	var igLinks []string
-	for _, group := range groups {
-		ig, err := l.instancePool.Get(sp.IGName(), group.Zone)
-		if err != nil {
-			return fmt.Errorf("error retrieving IG for linking with backend %+v: %w", sp, err)
-		}
+	for _, ig := range igs {
 		igLinks = append(igLinks, ig.SelfLink)
 	}
 

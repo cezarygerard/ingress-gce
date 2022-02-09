@@ -18,6 +18,7 @@ package backends
 
 import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	compute "google.golang.org/api/compute/v1"
 	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -67,9 +68,15 @@ type Syncer interface {
 }
 
 // Linker is an interface to link backends with their associated groups.
-type Linker interface {
+type NegLinker interface {
 	// Link a BackendService to its groups.
 	Link(sp utils.ServicePort, groups []GroupKey) error
+}
+
+// Linker is an interface to link backends with their associated groups.
+type IGLinker interface {
+	// Link a BackendService to its groups.
+	Link(sp utils.ServicePort, igs []*compute.InstanceGroup) error
 }
 
 // NEGGetter is an interface to retrieve NEG object
