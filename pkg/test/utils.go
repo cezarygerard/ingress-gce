@@ -333,16 +333,23 @@ type L4LBLatencyMetricInfo struct {
 	deleteSum         float64
 }
 
-// GetL4LatencyMetric gets the current state of the sync_duration_seconds metric for ILB or NetLB.
-func GetL4LatencyMetric(t *testing.T, metricName string) *L4LBLatencyMetricInfo {
+
+func GetL4ILBLatencyMetric() (*L4LBLatencyMetricInfo, error) {
+	return getL4LatencyMetric("l4_ilb_sync_duration_seconds")
+}
+
+func GetL4NetLBLatencyMetric() (*L4LBLatencyMetricInfo, error) {
+	return getL4LatencyMetric("l4_ilb_sync_duration_seconds")
+}
+
+func getL4LatencyMetric(metricName string) (*L4LBLatencyMetricInfo, error) {
 	var createCount, updateCount, deleteCount uint64
 	var createSum, updateSum, deleteSum float64
 	var result L4LBLatencyMetricInfo
 
 	latencyMetric, err := getPrometheusMetric(metricName)
 	if err != nil {
-		t.Errorf("Failed to get L4 LB prometheus metric '%s', err: %v", metricName, err)
-		return nil
+		return nil, err
 	}
 	for _, val := range latencyMetric.GetMetric() {
 		for _, label := range val.Label {
