@@ -31,13 +31,14 @@ import (
 
 // FirewallParams holds all data needed to create firewall for L4 LB
 type FirewallParams struct {
-	Name         string
-	IP           string
-	SourceRanges []string
-	PortRanges   []string
-	NodeNames    []string
-	Protocol     string
-	L4Type       utils.L4LBType
+	Name              string
+	IP                string
+	SourceRanges      []string
+	DestinationRanges []string
+	PortRanges        []string
+	NodeNames         []string
+	Protocol          string
+	L4Type            utils.L4LBType
 }
 
 func EnsureL4FirewallRule(cloud *gce.Cloud, nsName string, params *FirewallParams, sharedRule bool) error {
@@ -51,15 +52,17 @@ func EnsureL4FirewallRule(cloud *gce.Cloud, nsName string, params *FirewallParam
 		return err
 	}
 	fwDesc, err := utils.MakeL4LBServiceDescription(nsName, params.IP, meta.VersionGA, sharedRule, params.L4Type)
+	klog.V(3).Infof("fwDesc: %v", fwDesc)
 	if err != nil {
 		klog.Warningf("EnsureL4FirewallRule(%v): failed to generate description for L4 %s rule, err: %v", params.Name, params.L4Type.ToString(), err)
 	}
 	expectedFw := &compute.Firewall{
-		Name:         params.Name,
-		Description:  fwDesc,
-		Network:      cloud.NetworkURL(),
-		SourceRanges: params.SourceRanges,
-		TargetTags:   nodeTags,
+		Name:              params.Name,
+		Description:       fwDesc,
+		Network:           cloud.NetworkURL(),
+		SourceRanges:      params.SourceRanges,
+		DestinationRanges: params.DestinationRanges,
+		TargetTags:        nodeTags,
 		Allowed: []*compute.FirewallAllowed{
 			{
 				IPProtocol: strings.ToLower(params.Protocol),
