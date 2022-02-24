@@ -342,6 +342,11 @@ func GetL4ILBLatencyMetric(t *testing.T) *L4LBLatencyMetricInfo {
 	return getL4LatencyMetric(t, metrics.L4ilbLatencyMetricName)
 }
 
+// GetL4NetLBLatencyMetric gets the current state of the l4_netlb_sync_duration_seconds metric.
+func GetL4NetLBLatencyMetric(t *testing.T) *L4LBLatencyMetricInfo {
+	return getL4LatencyMetric(t, metrics.L4netlbLatencyMetricName)
+}
+
 func getL4LatencyMetric(t *testing.T, metricName string) *L4LBLatencyMetricInfo {
 	var createCount, updateCount, deleteCount uint64
 	var createSum, updateSum, deleteSum float64
@@ -417,9 +422,15 @@ type L4LBErrorMetricInfo struct {
 
 // GetL4ILBErrorMetric gets the current state of the l4_ilb_sync_error_count.
 func GetL4ILBErrorMetric(t *testing.T) *L4LBErrorMetricInfo {
-	return getL4LBErrorMetric(t, metrics.L4ilbErrorMetricName)
+	return getL4lbErrorMetric(t, metrics.L4ilbErrorMetricName)
 }
-func getL4LBErrorMetric(t *testing.T, metricName string) *L4LBErrorMetricInfo {
+
+// GetL4NetLBErrorMetric gets the current state of the l4_netlb_sync_error_count.
+func GetL4NetLBErrorMetric(t *testing.T) *L4LBErrorMetricInfo {
+	return getL4lbErrorMetric(t, metrics.L4netlbErrorMetricName)
+}
+
+func getL4lbErrorMetric(t *testing.T, metricName string) *L4LBErrorMetricInfo {
 	result := &L4LBErrorMetricInfo{ByErrorType: make(map[string]uint64), ByGCEResource: make(map[string]uint64)}
 
 	errorMetric, err := getPrometheusMetric(metricName)
