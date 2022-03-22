@@ -263,8 +263,7 @@ func (lc *L4NetLBController) checkHealth() error {
 	// This indicates that the controller was stuck handling a previous update, or sync function did not get invoked.
 	syncTimeLatest := lastEnqueueTime.Add(enqueueToSyncDelayThreshold)
 	if lastSyncTime.After(syncTimeLatest) {
-		msg := fmt.Sprintf("L4 External LoadBalancer Sync happened at time %v - %v after enqueue time, threshold is %v", lastSyncTime, lastSyncTime.Sub(lastEnqueueTime), enqueueToSyncDelayThreshold)
-		klog.Error(msg)
+		return fmt.Errorf("L4 External LoadBalancer Sync happened at time %v - %v after enqueue time, threshold is %v", lastSyncTime, lastSyncTime.Sub(lastEnqueueTime), enqueueToSyncDelayThreshold)
 	}
 	return nil
 }
