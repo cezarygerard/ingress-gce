@@ -153,7 +153,7 @@ func ToNamespacedName(s string) (r types.NamespacedName, err error) {
 // IgnoreHTTPNotFound returns the passed err if it's not a GoogleAPI error
 // with a NotFound status code.
 func IgnoreHTTPNotFound(err error) error {
-	if err != nil && IsHTTPErrorCode(err, http.StatusNotFound) {
+	if err != nil && IsNotFoundError(err){
 		return nil
 	}
 	return err
@@ -737,4 +737,8 @@ func GetNetworkTier(service *api_v1.Service) (cloud.NetworkTier, bool) {
 	default:
 		return cloud.NetworkTierDefault, false
 	}
+}
+
+func GetNetworkTier(service *api_v1.Service) (cloud.NetworkTier, bool) {
+
 }

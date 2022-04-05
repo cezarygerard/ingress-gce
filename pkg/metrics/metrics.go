@@ -244,6 +244,7 @@ func (im *ControllerMetrics) DeleteL4ILBService(svcKey string) {
 
 // SetL4NetLBService adds metric state for given service to map.
 func (im *ControllerMetrics) SetL4NetLBService(svcKey string, state L4NetLBServiceState) {
+	// czawadka - wtf, export more often!
 	im.Lock()
 	defer im.Unlock()
 

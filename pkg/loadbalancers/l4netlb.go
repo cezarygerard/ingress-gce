@@ -186,24 +186,14 @@ func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *L4NetLBS
 		result.GCEResourceInError = annotations.AddressResource
 	}
 
-	deleteFwFunc := func(name string) error {
-		err := firewalls.EnsureL4FirewallRuleDeleted(l4netlb.cloud, name)
-		if err != nil {
-			if fwErr, ok := err.(*firewalls.FirewallXPNError); ok {
-				l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeNormal, "XPN", fwErr.Message)
-				return nil
-			}
-			return err
-		}
-		return nil
-	}
 	// delete firewall rule allowing load balancer source ranges
-	err = deleteFwFunc(name)
+	err = l4netlb.deleteFw(name)
 	if err != nil {
 		klog.Errorf("Failed to delete firewall rule %s for service %s - %v", name, l4netlb.NamespacedName.String(), err)
 		result.GCEResourceInError = annotations.FirewallRuleResource
 		result.Error = err
 	}
+
 	// delete backend service
 	err = utils.IgnoreHTTPNotFound(l4netlb.backendPool.Delete(name, meta.VersionGA, meta.Regional))
 	if err != nil {
@@ -245,9 +235,53 @@ func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *L4NetLBS
 		}
 	}
 	for _, isShared := range []bool{true, false} {
-		deleteHcFunc(isShared)
+		l4netlb.deleteHc(svc, isShared)
 	}
 	return result
+}
+
+func (l4netlb *L4NetLB)  deleteHc(svc *corev1.Service, sharedHC bool) (err error, GCEResourceInError string) {
+	hcName, hcFwName := l4netlb.namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
+	if sharedHC {
+		l4netlb.sharedResourcesLock.Lock()
+		defer l4netlb.sharedResourcesLock.Unlock()
+	}
+	err = healthchecks.DeleteHealthCheck(l4netlb.cloud, hcName, meta.Regional)
+
+	if utils.IsNotFoundError(err) {
+		klog.Infof("Did not found healthcheck")
+	}
+
+	if err != nil {
+		if !utils.IsInUsedByError(err) {
+			klog.Errorf("Failed to delete healthcheck for service %s - %v", l4netlb.NamespacedName.String(), err)
+			GCEResourceInError = annotations.HealthcheckResource
+			return
+		}
+		// Ignore deletion error due to health check in use by another resource.
+		// This will be hit if this is a shared healthcheck.
+		klog.V(2).Infof("Failed to delete healthcheck %s: health check in use.", hcName)
+	} else {
+		// Delete healthcheck firewall rule if healthcheck deletion is successful.
+		err = l4netlb.deleteFw(hcFwName)
+		if err != nil {
+			klog.Errorf("Failed to delete firewall rule %s for service %s - %v", hcFwName, l4netlb.NamespacedName.String(), err)
+			GCEResourceInError = annotations.FirewallForHealthcheckResource
+		}
+	}
+	return
+}
+
+func (l4netlb *L4NetLB) deleteFw(name string) error {
+	err := firewalls.EnsureL4FirewallRuleDeleted(l4netlb.cloud, name)
+	if err != nil {
+		if fwErr, ok := err.(*firewalls.FirewallXPNError); ok {
+			l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeNormal, "XPN", fwErr.Message)
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 // GetFRName returns the name of the forwarding rule for the given L4 External LoadBalancer service.

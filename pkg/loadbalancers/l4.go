@@ -156,6 +156,8 @@ func (l *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *L4ILBSyncRe
 			l.sharedResourcesLock.Lock()
 			defer l.sharedResourcesLock.Unlock()
 		}
+
+		//TODO CZAWADKA - REFACTOR (wrong error handling when not found
 		err = utils.IgnoreHTTPNotFound(healthchecks.DeleteHealthCheck(l.cloud, hcName, meta.Global))
 		if err != nil {
 			if !utils.IsInUsedByError(err) {

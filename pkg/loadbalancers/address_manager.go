@@ -144,6 +144,7 @@ func (am *addressManager) ensureAddressReservation() (string, IPAddressType, err
 		Subnetwork:  am.subnetURL,
 	}
 	// NetworkTier is supported only for External IP Address
+	// If tier is empty then it will be PREMIUM
 	if am.addressType == cloud.SchemeExternal {
 		newAddr.NetworkTier = am.networkTier.ToGCEValue()
 	}
@@ -178,6 +179,7 @@ func (am *addressManager) ensureAddressReservation() (string, IPAddressType, err
 		return "", IPAddrUndefined, fmt.Errorf("failed to reserve address %q with no specific IP, err: %v", am.name, reserveErr)
 	}
 
+	// TODO czawadka how does it ensure the address???
 	// Reserving the address failed due to a conflict or bad request. The address manager just checked that no address
 	// exists with the name, so it may belong to the user.
 	addr, err := am.svc.GetRegionAddressByIP(am.region, am.targetIP)
