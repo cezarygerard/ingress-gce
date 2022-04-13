@@ -50,9 +50,25 @@ func EnsureL4HealthCheck(cloud *gce.Cloud, svc *corev1.Service, namer namer.L4Re
 	if !sharedHC {
 		hcPath, hcPort = helpers.GetServiceHealthCheckPathPort(svc)
 	}
-	nn := types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}
-	_, hcLink, err := ensureL4HealthCheckInternal(cloud, hcName, nn, sharedHC, hcPath, hcPort, scope, l4Type)
+	namespacedName := types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}
+	_, hcLink, err := ensureL4HealthCheckInternal(cloud, hcName, namespacedName, sharedHC, hcPath, hcPort, scope, l4Type)
 	return hcLink, hcFwName, hcPort, hcName, err
+}
+
+//
+func GetHealthCheck(cloud *gce.Cloud, svc *corev1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType)  (*composite.HealthCheck, error){
+	hcName, _ := namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
+	key, err := composite.CreateKey(cloud, hcName, scope)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to create composite key for healthcheck %s - %w", hcName, err)
+	}
+	hc, err := composite.GetHealthCheck(cloud, key, meta.VersionGA)
+	if err != nil {
+		if !utils.IsNotFoundError(err) {
+			return nil, err
+		}
+	}
+	return hc, nil
 }
 
 func ensureL4HealthCheckInternal(cloud *gce.Cloud, name string, svcName types.NamespacedName, shared bool, path string, port int32, scope meta.KeyType, l4Type utils.L4LBType) (*composite.HealthCheck, string, error) {

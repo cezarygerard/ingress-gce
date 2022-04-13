@@ -376,7 +376,7 @@ func (l4netlb *L4NetLB) ensureExternalForwardingRule(bsLink string) (*composite.
 		return nil, IPAddrUndefined, fmt.Errorf("Failed to compute description for forwarding rule %s, err: %w", frName,
 			err)
 	}
-	fr := &composite.ForwardingRule{
+	newForwardingRule := &composite.ForwardingRule{
 		Name:                frName,
 		Description:         frDesc,
 		IPAddress:           ipToUse,
@@ -388,29 +388,29 @@ func (l4netlb *L4NetLB) ensureExternalForwardingRule(bsLink string) (*composite.
 	}
 
 	if existingFwdRule != nil {
-		equal, err := Equal(existingFwdRule, fr)
+		equal, err := Equal(existingFwdRule, newForwardingRule)
 		if err != nil {
 			return existingFwdRule, IPAddrUndefined, err
 		}
 		if equal {
 			// nothing to do
-			klog.V(2).Infof("ensureExternalForwardingRule: Skipping update of unchanged forwarding rule - %s", fr.Name)
+			klog.V(2).Infof("ensureExternalForwardingRule: Skipping update of unchanged forwarding rule - %s", newForwardingRule.Name)
 			return existingFwdRule, isIPManaged, nil
 		}
-		frDiff := cmp.Diff(existingFwdRule, fr)
+		frDiff := cmp.Diff(existingFwdRule, newForwardingRule)
 		// If the forwarding rule pointed to a backend service which does not match the controller naming scheme,
 		// that resource could be leaked. It is not being deleted here because that is a user-managed resource.
-		klog.V(2).Infof("ensureExternalForwardingRule: forwarding rule changed - Existing - %+v\n, New - %+v\n, Diff(-existing, +new) - %s\n. Deleting existing forwarding rule.", existingFwdRule, fr, frDiff)
+		klog.V(2).Infof("ensureExternalForwardingRule: forwarding rule changed - Existing - %+v\n, New - %+v\n, Diff(-existing, +new) - %s\n. Deleting existing forwarding rule.", existingFwdRule, newForwardingRule, frDiff)
 		if err = utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l4netlb.cloud, key, version)); err != nil {
 			return nil, IPAddrUndefined, err
 		}
 		l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %q deleted", key.Name)
 	}
-	klog.V(2).Infof("ensureExternalForwardingRule: Creating/Recreating forwarding rule - %s", fr.Name)
-	if err = composite.CreateForwardingRule(l4netlb.cloud, key, fr); err != nil {
+	klog.V(2).Infof("ensureExternalForwardingRule: Creating/Recreating forwarding rule - %s", newForwardingRule.Name)
+	if err = composite.CreateForwardingRule(l4netlb.cloud, key, newForwardingRule); err != nil {
 		return nil, IPAddrUndefined, err
 	}
-	createdFr, err := composite.GetForwardingRule(l4netlb.cloud, key, fr.Version)
+	createdFr, err := composite.GetForwardingRule(l4netlb.cloud, key, newForwardingRule.Version)
 	return createdFr, isIPManaged, err
 }
 

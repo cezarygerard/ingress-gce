@@ -63,9 +63,7 @@ type L4NetLBController struct {
 }
 
 // NewL4NetLBController creates a controller for l4 external loadbalancer.
-func NewL4NetLBController(
-	ctx *context.ControllerContext,
-	stopCh chan struct{}) *L4NetLBController {
+func NewL4NetLBController(ctx *context.ControllerContext, stopCh chan struct{}) *L4NetLBController {
 	if ctx.NumL4Workers <= 0 {
 		klog.Infof("L4 Worker count has not been set, setting to 1")
 		ctx.NumL4Workers = 1
@@ -242,6 +240,7 @@ func (lc *L4NetLBController) hasRBSForwardingRule(svc *v1.Service) bool {
 	if lc.hasForwardingRuleAnnotation(svc, frName) {
 		return true
 	}
+	klog.Warningf(">>>>>>>>>> GetForwardingRule! %+v", svc)
 	existingFR := l4netlb.GetForwardingRule(frName, meta.VersionGA)
 	return existingFR != nil && existingFR.LoadBalancingScheme == string(cloud.SchemeExternal) && existingFR.BackendService != ""
 }
