@@ -1275,8 +1275,9 @@ func assertInternalLbResources(t *testing.T, apiService *v1.Service, l *L4, node
 	sharedHC := !servicehelper.RequestsOnlyLocalTraffic(apiService)
 	resourceName, _ := l.namer.L4Backend(l.Service.Namespace, l.Service.Name)
 	resourceDesc, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(apiService.Namespace, apiService.Name), "", meta.VersionGA, false, utils.ILB)
-	// todo fix this shit.
-	//firewallDesc, err := utils.MakeL4LBFirewallDescription(utils.ServiceKeyFunc(apiService.Namespace, apiService.Name), "", meta.VersionGA, false, utils.ILB)
+	expectedNonSharedFirewallDesc, err := utils.MakeL4LBFirewallDescription(utils.ServiceKeyFunc(apiService.Namespace, apiService.Name), "", meta.VersionGA, false)
+	expectedSharedFirewallDesc, err := utils.MakeL4LBFirewallDescription(utils.ServiceKeyFunc(apiService.Namespace, apiService.Name), "", meta.VersionGA, true)
+
 	if err != nil {
 		t.Errorf("Failed to create description for resources, err %v", err)
 	}
@@ -1288,9 +1289,11 @@ func assertInternalLbResources(t *testing.T, apiService *v1.Service, l *L4, node
 	expectedAnnotations := make(map[string]string)
 	hcName, hcFwName := l.namer.L4HealthCheck(apiService.Namespace, apiService.Name, sharedHC)
 	// hcDesc is the resource description for healthcheck and firewall rule allowing healthcheck.
-	hcDesc := resourceDesc
+	hcDesc := expectedNonSharedFirewallDesc
+	hcFwDesc := expectedNonSharedFirewallDesc
 	if sharedHC {
 		hcDesc = sharedResourceDesc
+		hcFwDesc = expectedSharedFirewallDesc
 	}
 
 	type nameAndDesc struct {
@@ -1298,15 +1301,15 @@ func assertInternalLbResources(t *testing.T, apiService *v1.Service, l *L4, node
 		fwDesc string
 	}
 	fwNamesAndDesc := []nameAndDesc{
-		{resourceName, resourceDesc},
-		{hcFwName, hcDesc},
+		{fwName: resourceName, fwDesc: expectedNonSharedFirewallDesc},
+		{fwName: hcFwName, fwDesc: hcFwDesc},
 	}
 	expectedAnnotations[annotations.FirewallRuleKey] = resourceName
 	expectedAnnotations[annotations.FirewallRuleForHealthcheckKey] = hcFwName
 	if hcFwName == resourceName {
 		t.Errorf("Got the same name %q for LB firewall rule and Healthcheck firewall rule", hcFwName)
 	}
-	for _, info := range fwNamesAndDesc {
+	for i, info := range fwNamesAndDesc {
 		firewall, err := l.cloud.GetFirewall(info.fwName)
 		if err != nil {
 			t.Fatalf("Failed to fetch firewall rule %q - err %v", info.fwName, err)
@@ -1317,8 +1320,8 @@ func assertInternalLbResources(t *testing.T, apiService *v1.Service, l *L4, node
 		if len(firewall.SourceRanges) == 0 {
 			t.Fatalf("Unexpected empty source range for firewall rule %v", firewall)
 		}
-		if !sharedHC && firewall.Description != info.fwDesc {
-			t.Errorf("Unexpected description in firewall %q - Expected %s, Got %s", info.fwName, firewall.Description, info.fwDesc)
+		if firewall.Description != info.fwDesc {
+			t.Errorf("Unexpected description in firewall %q - Expected %s, Got %s, %d", info.fwName, firewall.Description, info.fwDesc, i)
 		}
 	}
 
