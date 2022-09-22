@@ -408,8 +408,8 @@ k8s.io/api/scheduling/v1beta1
 k8s.io/api/storage/v1
 k8s.io/api/storage/v1alpha1
 k8s.io/api/storage/v1beta1
-# k8s.io/apiextensions-apiserver v0.20.0
-## explicit; go 1.15
+# k8s.io/apiextensions-apiserver v0.21.1
+## explicit
 k8s.io/apiextensions-apiserver/pkg/apis/apiextensions
 k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1
 k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1
@@ -747,8 +747,19 @@ k8s.io/cloud-provider/service/helpers
 k8s.io/cloud-provider/volume
 k8s.io/cloud-provider/volume/errors
 k8s.io/cloud-provider/volume/helpers
-# k8s.io/component-base v0.20.0
-## explicit; go 1.15
+# k8s.io/cloud-provider-gcp/crd v0.0.0-20220816175308-5c668b91993a
+## explicit
+k8s.io/cloud-provider-gcp/crd/apis/gcpfirewall/v1beta1
+k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/clientset/versioned
+k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/clientset/versioned/fake
+k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/clientset/versioned/scheme
+k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/clientset/versioned/typed/gcpfirewall/v1beta1
+k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/clientset/versioned/typed/gcpfirewall/v1beta1/fake
+k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/informers/externalversions/gcpfirewall/v1beta1
+k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/informers/externalversions/internalinterfaces
+k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/listers/gcpfirewall/v1beta1
+# k8s.io/component-base v0.21.1
+## explicit
 k8s.io/component-base/config
 k8s.io/component-base/config/options
 k8s.io/component-base/metrics

@@ -4,6 +4,7 @@ go 1.18
 
 require (
 	github.com/GoogleCloudPlatform/k8s-cloud-provider v1.20.0
+	github.com/go-openapi/jsonpointer v0.19.5 // indirect
 	github.com/google/go-cmp v0.5.8
 	github.com/kr/pretty v0.2.0
 	github.com/prometheus/client_golang v1.7.1
@@ -14,11 +15,12 @@ require (
 	google.golang.org/api v0.89.0
 	istio.io/api v0.0.0-20190809125725-591cf32c1d0e
 	k8s.io/api v0.22.2
-	k8s.io/apiextensions-apiserver v0.20.0
+	k8s.io/apiextensions-apiserver v0.21.1
 	k8s.io/apimachinery v0.22.2
 	k8s.io/client-go v0.22.2
 	k8s.io/cloud-provider v0.20.0
-	k8s.io/component-base v0.20.0
+	k8s.io/cloud-provider-gcp/crd v0.0.0-20220816175308-5c668b91993a
+	k8s.io/component-base v0.21.1
 	k8s.io/klog/v2 v2.50.2
 	k8s.io/kube-openapi v0.0.0-20210421082810-95288971da7e
 	k8s.io/legacy-cloud-providers v0.20.0
