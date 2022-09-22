@@ -28,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/cloud-provider-gcp/crd/apis/gcpfirewall/v1beta1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/common/operator"
 	"k8s.io/ingress-gce/pkg/context"
@@ -50,26 +51,31 @@ var (
 
 // FirewallController synchronizes the firewall rule for all ingresses.
 type FirewallController struct {
-	ctx          *context.ControllerContext
-	firewallPool SingleFirewallPool
-	queue        utils.TaskQueue
-	translator   *translator.Translator
-	nodeLister   cache.Indexer
-	hasSynced    func() bool
+	ctx                  *context.ControllerContext
+	firewallPool         SingleFirewallPool
+	queue                utils.TaskQueue
+	translator           *translator.Translator
+	nodeLister           cache.Indexer
+	hasSynced            func() bool
+	enableCR             bool
+	disableFWEnforcement bool
 }
 
 // NewFirewallController returns a new firewall controller.
 func NewFirewallController(
 	ctx *context.ControllerContext,
-	portRanges []string) *FirewallController {
-	firewallPool := NewFirewallPool(ctx.Cloud, ctx.ClusterNamer, gce.L7LoadBalancerSrcRanges(), portRanges)
+	portRanges []string,
+	enableCR, disableFWEnforcement bool) *FirewallController {
+	firewallPool := NewFirewallPool(ctx.FirewallClient, ctx.Cloud, ctx.ClusterNamer, gce.L7LoadBalancerSrcRanges(), portRanges, enableCR, disableFWEnforcement)
 
 	fwc := &FirewallController{
-		ctx:          ctx,
-		firewallPool: firewallPool,
-		translator:   ctx.Translator,
-		nodeLister:   ctx.NodeInformer.GetIndexer(),
-		hasSynced:    ctx.HasSynced,
+		ctx:                  ctx,
+		firewallPool:         firewallPool,
+		translator:           ctx.Translator,
+		nodeLister:           ctx.NodeInformer.GetIndexer(),
+		hasSynced:            ctx.HasSynced,
+		enableCR:             enableCR,
+		disableFWEnforcement: disableFWEnforcement,
 	}
 
 	fwc.queue = utils.NewPeriodicTaskQueue("", "firewall", fwc.sync)
@@ -119,6 +125,29 @@ func NewFirewallController(
 		},
 	})
 
+	if enableCR {
+		// FW CRs will be updated/deleted by the PFW controller or the user. Ingress controller need to watch such events
+		// and act accordingly.
+		ctx.FirewallInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			// We enqueue the sync task for all update events for these two reasons:
+			// 1. Make sure the CR is consistent with the FW configuration.
+			// 2. Force the controller to read the CR status and populate proper errors.
+			UpdateFunc: func(old, cur interface{}) {
+				curFW := cur.(*v1beta1.GCPFirewall)
+				name := fwc.ctx.ClusterNamer.FirewallRule()
+				if name != curFW.Name {
+					return
+				}
+				fwc.queue.Enqueue(queueKey)
+			},
+			// In case the firewall CR is deleted accidentally, we need to reconcile the firewall CR.
+			// If no ingress is left, nothing will be added.
+			DeleteFunc: func(obj interface{}) {
+				fwc.queue.Enqueue(queueKey)
+			},
+		})
+	}
+
 	return fwc
 }
 
@@ -158,8 +187,15 @@ func (fwc *FirewallController) sync(key string) error {
 
 	// If there are no more ingresses, then delete the firewall rule.
 	if len(gceIngresses) == 0 {
-		if err := fwc.firewallPool.GC(); err != nil {
-			klog.Errorf("Could not garbage collect firewall pool, got error: %v", err)
+		if !fwc.disableFWEnforcement {
+			if err := fwc.firewallPool.GC(); err != nil {
+				klog.Errorf("Could not garbage collect firewall pool, got error: %v", err)
+			}
+		}
+		if fwc.enableCR {
+			if err := fwc.firewallPool.GCFirewallCR(); err != nil {
+				klog.Errorf("Could not garbage collect firewall CR, got error: %v", err)
+			}
 		}
 		return nil
 	}

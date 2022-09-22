@@ -25,6 +25,7 @@ type SingleFirewallPool interface {
 	// Sync syncs firewall rules with the cloud
 	Sync(nodeNames, additionalPorts, additionalRanges []string, allowNodePort bool) error
 	GC() error
+	GCFirewallCR() error
 }
 
 // Firewall interfaces with the GCE firewall api.

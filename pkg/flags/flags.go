@@ -112,6 +112,8 @@ var (
 		EnableL4ILBDualStack           bool
 		EnableMultipleIGs              bool
 		MaxIGSize                      int
+		EnableFirewallCR               bool
+		DisableFWEnforcement           bool
 	}{
 		GCERateLimitScale: 1.0,
 	}
@@ -257,6 +259,8 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableMultipleIGs, "enable-multiple-igs", false, "Enable using multiple unmanaged instance groups")
 	flag.IntVar(&F.MaxIGSize, "max-ig-size", 1000, "Max number of instances in Instance Group")
 	flag.DurationVar(&F.MetricsExportInterval, "metrics-export-interval", 10*time.Minute, `Period for calculating and exporting metrics related to state of managed objects.`)
+	flag.BoolVar(&F.EnableFirewallCR, "enable-firewall-cr", false, "Enable generating firewall CR")
+	flag.BoolVar(&F.DisableFWEnforcement, "disable-fw-enforcement", false, "Disable Ingress contrller to enforce the firewall ruless. If set to true, Ingress Controller stops creating GCE firewall rules. We can only enable this if enable-firewall-cr sets to true.")
 }
 
 type RateLimitSpecs struct {

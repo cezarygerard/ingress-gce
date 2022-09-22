@@ -41,6 +41,7 @@ import (
 	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/client-go/tools/record"
+	firewallclient "k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/clientset/versioned"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
 	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
 	ingparamsclient "k8s.io/ingress-gce/pkg/ingparams/client/clientset/versioned"
@@ -133,6 +134,13 @@ func main() {
 		}
 	}
 
+	var firewallClient firewallclient.Interface
+	if flags.F.EnableFirewallCR {
+		firewallClient, err = firewallclient.NewForConfig(kubeConfig)
+		if err != nil {
+			klog.Fatalf("Failed to create Firewall client: %v", err)
+		}
+	}
 	var svcNegClient svcnegclient.Interface
 	negCRDMeta := svcneg.CRDMeta()
 	if _, err := crdHandler.EnsureCRD(negCRDMeta, true); err != nil {
@@ -202,7 +210,7 @@ func main() {
 		MaxIGSize:             flags.F.MaxIGSize,
 		EnableL4ILBDualStack:  flags.F.EnableL4ILBDualStack,
 	}
-	ctx := ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, svcNegClient, ingParamsClient, svcAttachmentClient, cloud, namer, kubeSystemUID, ctxConfig)
+	ctx := ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, firewallClient, svcNegClient, ingParamsClient, svcAttachmentClient, cloud, namer, kubeSystemUID, ctxConfig)
 	go app.RunHTTPServer(ctx.HealthCheck)
 
 	if !flags.F.LeaderElection.LeaderElect {
@@ -279,7 +287,12 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		})
 	}
 
-	fwc := firewalls.NewFirewallController(ctx, flags.F.NodePortRanges.Values())
+	if !flags.F.EnableFirewallCR {
+		// Making sure we only disable FW enforcement when we enable firewall CR
+		flags.F.DisableFWEnforcement = false
+	}
+
+	fwc := firewalls.NewFirewallController(ctx, flags.F.NodePortRanges.Values(), flags.F.EnableFirewallCR, flags.F.DisableFWEnforcement)
 
 	if flags.F.RunL4Controller {
 		l4Controller := l4lb.NewILBController(ctx, stopCh)
