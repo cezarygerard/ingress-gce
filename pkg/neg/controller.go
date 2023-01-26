@@ -344,7 +344,7 @@ func (c *Controller) Run(stopCh <-chan struct{}) {
 		c.stop()
 	}()
 
-	go wait.Until(c.serviceWorker, time.Second, stopCh)
+	go wait.Until(c.startServiceWorkers, time.Second, stopCh)
 	go wait.Until(c.endpointWorker, time.Second, stopCh)
 	go wait.Until(c.nodeWorker, time.Second, stopCh)
 	go func() {
@@ -428,6 +428,11 @@ func (c *Controller) processEndpoint(key string) {
 		return
 	}
 	c.manager.Sync(namespace, name)
+}
+func (c *Controller) startServiceWorkers() {
+	for i := 1; i <= 5; i++ {
+		c.serviceWorker()
+	}
 }
 
 func (c *Controller) serviceWorker() {
