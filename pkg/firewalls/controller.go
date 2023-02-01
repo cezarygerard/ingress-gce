@@ -26,6 +26,7 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/cloud-provider-gcp/crd/apis/gcpfirewall/v1beta1"
@@ -51,14 +52,39 @@ var (
 
 // FirewallController synchronizes the firewall rule for all ingresses.
 type FirewallController struct {
-	ctx                  *context.ControllerContext
-	firewallPool         SingleFirewallPool
-	queue                utils.TaskQueue
-	translator           *translator.Translator
-	nodeLister           cache.Indexer
-	hasSynced            func() bool
-	enableCR             bool
-	disableFWEnforcement bool
+	ctx          *context.ControllerContext
+	firewallPool SingleFirewallPool
+	queue        utils.TaskQueue
+	translator   *translator.Translator
+	nodeLister   cache.Indexer
+	hasSynced    func() bool
+}
+
+type compositeFirewallPool struct {
+	pools []SingleFirewallPool
+}
+
+func (comp *compositeFirewallPool) Sync(nodeNames, additionalPorts, additionalRanges []string, allowNodePort bool) error {
+	var errList []error
+	for _, singlePool := range comp.pools {
+		err := singlePool.Sync(nodeNames, additionalPorts, additionalRanges, allowNodePort)
+		if err != nil {
+			errList = append(errList, err)
+		}
+	}
+	return utilerrors.NewAggregate(errList)
+
+}
+
+func (comp *compositeFirewallPool) GC() error {
+	var errList []error
+	for _, singlePool := range comp.pools {
+		err := singlePool.GC()
+		if err != nil {
+			errList = append(errList, err)
+		}
+	}
+	return utilerrors.NewAggregate(errList)
 }
 
 // NewFirewallController returns a new firewall controller.
@@ -66,16 +92,39 @@ func NewFirewallController(
 	ctx *context.ControllerContext,
 	portRanges []string,
 	enableCR, disableFWEnforcement bool) *FirewallController {
-	firewallPool := NewFirewallPool(ctx.FirewallClient, ctx.Cloud, ctx.ClusterNamer, gce.L7LoadBalancerSrcRanges(), portRanges, enableCR, disableFWEnforcement)
+
+	compositeFirewallPool := &compositeFirewallPool{}
+	if enableCR {
+		firewallCRPool := NewFirewallCRPool(ctx.FirewallClient, ctx.Cloud, ctx.ClusterNamer, gce.L7LoadBalancerSrcRanges(), portRanges, disableFWEnforcement)
+		compositeFirewallPool.pools = append(compositeFirewallPool.pools, firewallCRPool)
+	}
+	if !disableFWEnforcement {
+		firewallPool := NewFirewallPool(ctx.Cloud, ctx.ClusterNamer, gce.L7LoadBalancerSrcRanges(), portRanges)
+		compositeFirewallPool.pools = append(compositeFirewallPool.pools, firewallPool)
+	}
+
+	//// if we had enum-like flag 'crMode' to guard the firewall CR creation the above code would look ~like:
+	//compositeFirewallPool := &compositeFirewallPool{}
+	//if crMode == "disabled" {
+	//	firewallPool := NewFirewallPool(ctx.Cloud, ctx.ClusterNamer, gce.L7LoadBalancerSrcRanges(), portRanges)
+	//	compositeFirewallPool.pools = append(compositeFirewallPool.pools, firewallPool)
+	//} else if crMode == "enabled" {
+	//	firewallCRPool := NewFirewallCRPool(ctx.FirewallClient, ctx.Cloud, ctx.ClusterNamer, gce.L7LoadBalancerSrcRanges(), portRanges, false)
+	//	compositeFirewallPool.pools = append(compositeFirewallPool.pools, firewallCRPool)
+	//} else if crMode == "dry-run" {
+	//	firewallCRPool := NewFirewallCRPool(ctx.FirewallClient, ctx.Cloud, ctx.ClusterNamer, gce.L7LoadBalancerSrcRanges(), portRanges, true)
+	//	firewallPool := NewFirewallPool(ctx.Cloud, ctx.ClusterNamer, gce.L7LoadBalancerSrcRanges(), portRanges)
+	//	compositeFirewallPool.pools = append(compositeFirewallPool.pools, firewallPool, firewallCRPool)
+	//} else {
+	//	panic("invalid firewall mode")
+	//}
 
 	fwc := &FirewallController{
-		ctx:                  ctx,
-		firewallPool:         firewallPool,
-		translator:           ctx.Translator,
-		nodeLister:           ctx.NodeInformer.GetIndexer(),
-		hasSynced:            ctx.HasSynced,
-		enableCR:             enableCR,
-		disableFWEnforcement: disableFWEnforcement,
+		ctx:          ctx,
+		firewallPool: compositeFirewallPool,
+		translator:   ctx.Translator,
+		nodeLister:   ctx.NodeInformer.GetIndexer(),
+		hasSynced:    ctx.HasSynced,
 	}
 
 	fwc.queue = utils.NewPeriodicTaskQueue("", "firewall", fwc.sync)
@@ -187,15 +236,8 @@ func (fwc *FirewallController) sync(key string) error {
 
 	// If there are no more ingresses, then delete the firewall rule.
 	if len(gceIngresses) == 0 {
-		if !fwc.disableFWEnforcement {
-			if err := fwc.firewallPool.GC(); err != nil {
-				klog.Errorf("Could not garbage collect firewall pool, got error: %v", err)
-			}
-		}
-		if fwc.enableCR {
-			if err := fwc.firewallPool.GCFirewallCR(); err != nil {
-				klog.Errorf("Could not garbage collect firewall CR, got error: %v", err)
-			}
+		if err := fwc.firewallPool.GC(); err != nil {
+			klog.Errorf("Could not garbage collect firewall pool, got error: %v", err)
 		}
 		return nil
 	}
