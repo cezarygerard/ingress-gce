@@ -32,6 +32,10 @@ type Manager interface {
 	Sync(nodeNames []string) error
 }
 
+type IGSyncer interface {
+	Sync(nodeNames []string) error
+}
+
 // Provider is an interface for managing gce instances groups, and the instances therein.
 type Provider interface {
 	GetInstanceGroup(name, zone string) (*compute.InstanceGroup, error)

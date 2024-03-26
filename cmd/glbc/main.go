@@ -377,10 +377,10 @@ func runControllers(ctx *ingctx.ControllerContext, option runOption, logger klog
 
 	if flags.F.EnableIGController {
 		igControllerParams := &instancegroups.ControllerConfig{
-			NodeInformer: ctx.NodeInformer,
-			IGManager:    ctx.InstancePool,
-			HasSynced:    ctx.HasSynced,
-			StopCh:       stopCh,
+			NodeInformer:  ctx.NodeInformer,
+			IGSyncer:      ctx.InstancePool,
+			HasSyncedFunc: ctx.HasSynced,
+			StopCh:        stopCh,
 		}
 		igController := instancegroups.NewController(igControllerParams, logger)
 		go runWithWg(igController.Run, wg)

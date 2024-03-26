@@ -20,6 +20,7 @@ import (
 	"time"
 
 	apiv1 "k8s.io/api/core/v1"
+	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -34,7 +35,7 @@ type Controller struct {
 	// queue is the TaskQueue used to manage the node worker updates.
 	queue utils.TaskQueue
 	// igManager is an interface to manage instance groups.
-	igManager Manager
+	igManager IGSyncer
 	// hasSynced returns true if relevant caches have done their initial
 	// synchronization.
 	hasSynced func() bool
@@ -45,10 +46,17 @@ type Controller struct {
 }
 
 type ControllerConfig struct {
-	NodeInformer cache.SharedIndexInformer
-	IGManager    Manager
-	HasSynced    func() bool
-	StopCh       <-chan struct{}
+	NodeInformer  cache.SharedIndexInformer
+	IGSyncer      IGSyncer
+	HasSyncedFunc func() bool
+	StopCh        <-chan struct{}
+}
+
+var dummyNode = &apiv1.Node{
+	ObjectMeta: meta_v1.ObjectMeta{
+		Namespace: "none",
+		Name:      "dummy",
+	},
 }
 
 // NewController returns a new node update controller.
@@ -56,8 +64,8 @@ func NewController(config *ControllerConfig, logger klog.Logger) *Controller {
 	logger = logger.WithName("InstanceGroupsController")
 	c := &Controller{
 		lister:    config.NodeInformer.GetIndexer(),
-		igManager: config.IGManager,
-		hasSynced: config.HasSynced,
+		igManager: config.IGSyncer,
+		hasSynced: config.HasSyncedFunc,
 		stopCh:    config.StopCh,
 		logger:    logger,
 	}
@@ -65,14 +73,17 @@ func NewController(config *ControllerConfig, logger klog.Logger) *Controller {
 
 	config.NodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
-			c.queue.Enqueue(obj)
+			c.queue.Enqueue(dummyNode)
+			//c.queue.Enqueue(obj)
 		},
 		DeleteFunc: func(obj interface{}) {
-			c.queue.Enqueue(obj)
+			//c.queue.Enqueue(obj)
+			c.queue.Enqueue(dummyNode)
 		},
 		UpdateFunc: func(oldObj, newObj interface{}) {
 			if nodeStatusChanged(oldObj.(*apiv1.Node), newObj.(*apiv1.Node)) {
-				c.queue.Enqueue(newObj)
+				c.queue.Enqueue(dummyNode)
+				//c.queue.Enqueue(newObj)
 			}
 		},
 	})
