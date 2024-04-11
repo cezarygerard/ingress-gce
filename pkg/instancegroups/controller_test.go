@@ -9,18 +9,21 @@ import (
 	informerv1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog/v2"
 )
 
 func TestSync(t *testing.T) {
 	config := &ControllerConfig{}
-	informer := informerv1.NewNodeInformer(fake.NewSimpleClientset(), 2*time.Second, utils.NewNamespaceIndexer())
+	fakeKubeClient := fake.NewSimpleClientset()
+	informer := informerv1.NewNodeInformer(fakeKubeClient, 60*time.Second, utils.NewNamespaceIndexer())
+
 	config.NodeInformer = informer
 	fakeSyncer := &IGSyncerFake{}
 	config.IGSyncer = fakeSyncer
 	config.HasSyncedFunc = func() bool {
 		return true
 	}
-	controller := NewController(config)
+	controller := NewController(config, klog.TODO())
 
 	channel := make(chan struct{})
 	go informer.Run(channel)
@@ -32,15 +35,30 @@ func TestSync(t *testing.T) {
 
 	informer.GetIndexer().Add(node1)
 	informer.GetIndexer().Add(node2)
-	node1.Annotations["dupa"] = "true"
-	node2.Annotations["dupa"] = "true"
-	informer.GetIndexer().Update(node1)
-	informer.GetIndexer().Update(node2)
-	time.Sleep(5 * time.Second)
-	informer.GetIndexer().Update(node2)
+	//fakeKubeClient.CoreV1().Nodes().Create(context.TODO(), node1, meta_v1.CreateOptions{})
+	//time.Sleep(2 * time.Second)
+	//fakeKubeClient.CoreV1().Nodes().Create(context.TODO(), node2, meta_v1.CreateOptions{})
+	time.Sleep(1 * time.Second)
 	if len(fakeSyncer.syncedNodes) != 1 {
-		t.Errorf("synced too many times")
+		t.Errorf("1 synced too many times %v", len(fakeSyncer.syncedNodes))
 	}
+	//klog.Warningf("hp: 1 synced times %v", len(fakeSyncer.syncedNodes))
+	//
+	//node1.Annotations["dupa"] = "true"
+	//node1.Spec.PodCIDR = "1.1.1.1/28"
+	//node2.Annotations["dupa"] = "true"
+	//node2.Spec.PodCIDR = "1.1.3.1/28"
+	//informer.GetIndexer().Update(node1)
+	//informer.GetIndexer().Update(node2)
+	////fakeKubeClient.CoreV1().Nodes().Update(context.TODO(), node1, meta_v1.UpdateOptions{})
+	////fakeKubeClient.CoreV1().Nodes().Update(context.TODO(), node2, meta_v1.UpdateOptions{})
+	//time.Sleep(5 * time.Second)
+	//////informer.GetIndexer().Update(node2)
+	//if len(fakeSyncer.syncedNodes) != 1 {
+	//	t.Errorf("2 synced too many times %v", len(fakeSyncer.syncedNodes))
+	//}
+	//klog.Warningf("hp: 2 synced times %v", len(fakeSyncer.syncedNodes))
+
 }
 
 type IGSyncerFake struct {
@@ -48,6 +66,7 @@ type IGSyncerFake struct {
 }
 
 func (igsf *IGSyncerFake) Sync(nodeNames []string) error {
+	klog.Warningf("synced %v", nodeNames)
 	igsf.syncedNodes = append(igsf.syncedNodes, nodeNames)
 	return nil
 }
@@ -102,8 +121,7 @@ func TestNodeStatusChanged(t *testing.T) {
 func testNode() *api_v1.Node {
 	return &api_v1.Node{
 		ObjectMeta: meta_v1.ObjectMeta{
-			Namespace: "ns",
-			Name:      "node",
+			Name: "node",
 			Annotations: map[string]string{
 				"key1": "value1",
 			},

@@ -54,8 +54,7 @@ type ControllerConfig struct {
 
 var dummyNode = &apiv1.Node{
 	ObjectMeta: meta_v1.ObjectMeta{
-		Namespace: "none",
-		Name:      "dummy",
+		Name: "dummy",
 	},
 }
 
@@ -73,17 +72,17 @@ func NewController(config *ControllerConfig, logger klog.Logger) *Controller {
 
 	config.NodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
-			c.queue.Enqueue(dummyNode)
-			//c.queue.Enqueue(obj)
+			//c.queue.Enqueue(dummyNode)
+			c.queue.Enqueue(obj)
 		},
 		DeleteFunc: func(obj interface{}) {
-			//c.queue.Enqueue(obj)
-			c.queue.Enqueue(dummyNode)
+			c.queue.Enqueue(obj)
+			//c.queue.Enqueue(dummyNode)
 		},
 		UpdateFunc: func(oldObj, newObj interface{}) {
 			if nodeStatusChanged(oldObj.(*apiv1.Node), newObj.(*apiv1.Node)) {
-				c.queue.Enqueue(dummyNode)
-				//c.queue.Enqueue(newObj)
+				//c.queue.Enqueue(dummyNode)
+				c.queue.Enqueue(newObj)
 			}
 		},
 	})
