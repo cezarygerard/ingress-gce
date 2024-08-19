@@ -854,7 +854,9 @@ func newServiceController(t *testing.T, fakeGCE *gce.Cloud) *L4Controller {
 	for _, n := range nodes {
 		ctx.NodeInformer.GetIndexer().Add(n)
 	}
-	return NewILBController(ctx, stopCh, klog.TODO())
+	l4c := NewILBController(ctx, stopCh, klog.TODO())
+	l4c.hasSynced = func() bool { return true }
+	return l4c
 }
 
 func newFakeGCE() *gce.Cloud {

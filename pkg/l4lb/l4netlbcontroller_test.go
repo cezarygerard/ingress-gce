@@ -298,7 +298,9 @@ func newL4NetLBServiceController() *L4NetLBController {
 	for _, n := range nodes {
 		ctx.NodeInformer.GetIndexer().Add(n)
 	}
-	return NewL4NetLBController(ctx, stopCh, klog.TODO())
+	lc := NewL4NetLBController(ctx, stopCh, klog.TODO())
+	lc.hasSynced = func() bool { return true }
+	return lc
 }
 
 func validateNetLBSvcStatus(svc *v1.Service, t *testing.T) {
