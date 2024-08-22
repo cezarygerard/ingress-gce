@@ -352,7 +352,7 @@ func validateAnnotationsDeleted(svc *v1.Service) error {
 
 func TestProcessMultipleNetLBServices(t *testing.T) {
 	backoff := retry.DefaultRetry
-	backoff.Duration = 1 * time.Second
+	backoff.Duration = 10 * time.Second
 	for _, onlyLocal := range []bool{true, false} {
 		t.Run(fmt.Sprintf("L4 with LocalMode=%v", onlyLocal), func(t *testing.T) {
 			lc := newL4NetLBServiceController()

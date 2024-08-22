@@ -457,7 +457,7 @@ func TestProcessUpdateClusterIPToILBService(t *testing.T) {
 func TestProcessMultipleServices(t *testing.T) {
 	backoff := retry.DefaultRetry
 	// Increase the duration since updates take longer on prow.
-	backoff.Duration = 1 * time.Second
+	backoff.Duration = 10 * time.Second
 	for _, onlyLocal := range []bool{true, false} {
 		t.Run(fmt.Sprintf("L4 with LocalMode=%v", onlyLocal), func(t *testing.T) {
 			l4c := newServiceController(t, newFakeGCE())
@@ -515,7 +515,9 @@ func TestProcessServiceWithDelayedNEGAdd(t *testing.T) {
 	addILBService(l4c, newSvc)
 	l4c.svcQueue.Enqueue(newSvc)
 
-	if err := retry.OnError(retry.DefaultRetry, func(error) bool { return true }, func() error {
+	backoff := retry.DefaultRetry
+	backoff.Duration = 10 * time.Second
+	if err := retry.OnError(backoff, func(error) bool { return true }, func() error {
 		if numRequeues := l4c.svcQueue.NumRequeues(newSvc); numRequeues == 0 {
 			return fmt.Errorf("Failed to requeue service with delayed NEG addition.")
 		}
@@ -531,9 +533,6 @@ func TestProcessServiceWithDelayedNEGAdd(t *testing.T) {
 	addNEG(l4c, newSvc)
 
 	var svcErr error
-	backoff := retry.DefaultRetry
-	// Increase the duration since the requeue time for failed events increases exponentially.
-	backoff.Duration = 10 * time.Second
 	if err := retry.OnError(backoff, func(error) bool { return true }, func() error {
 		if newSvc, svcErr = l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{}); svcErr != nil {
 			return fmt.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, svcErr)
